@@ -1,0 +1,92 @@
+# Loki server configuration — shared across all deployment methods.
+# Quadlet no-TLS variant is generated at runtime by stripping http_tls_config.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: info
+  grpc_server_max_concurrent_streams: 1000
+  http_tls_config:
+    cert_file: /etc/tls/tls.crt
+    key_file: /etc/tls/tls.key
+  # gRPC TLS disabled - internal connections only (single-instance deployment)
+  # Internal components (pattern_ingester, ring client) connect to localhost:9096 without TLS
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki-storage
+  storage:
+    filesystem:
+      chunks_directory: /loki-storage/chunks
+      rules_directory: /loki-storage/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+limits_config:
+  metric_aggregation_enabled: true
+  allow_structured_metadata: true
+  volume_enabled: true
+  retention_period: 30d   # Keep logs for 30 days
+  otlp_config:
+    resource_attributes:
+      attributes_config:
+        - action: index_label
+          attributes:
+            - compliance.control
+            - compliance.benchmark
+            # Index log attributes for efficient querying
+            - compliance.control.id
+            - compliance.control.catalog.id
+            - compliance.control.category
+            - compliance.status
+            - policy.rule.id
+            - policy.engine.name
+            - policy.evaluation.result
+            # Also index with underscores (Loki may convert dots to underscores)
+            - compliance_control_id
+            - compliance_control_catalog_id
+            - compliance_control_category
+            - compliance_status
+            - policy_rule_id
+            - policy_engine_name
+            - policy_evaluation_result
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h  # TSDB requires 24h period for index (retention is controlled by retention_period)
+
+pattern_ingester:
+  enabled: false
+  # Disabled: pattern_ingester tries to connect via HTTP to localhost:3100
+  # but Loki only accepts HTTPS. If pattern analysis is needed, configure
+  # pattern_ingester to use HTTPS or use a separate HTTP endpoint for internal use.
+  # metric_aggregation:
+  #   loki_address: localhost:3100
+
+ruler:
+  enable_alertmanager_discovery: true
+  enable_api: true
+
+frontend:
+  encoding: protobuf
+
+compactor:
+  working_directory: /tmp/loki/retention
+  delete_request_store: filesystem
+  retention_enabled: true

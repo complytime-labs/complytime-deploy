@@ -1,0 +1,33 @@
+# Local development overlay for OpenShift Local (CRC).
+# Inherits all base manifests, then:
+#   - Sets namespace to complytime-dev
+#   - Uses base images (no image patches)
+#   - Reduces resource limits for laptop
+#   - Changes PVC access mode to ReadWriteOnce (CRC hostpath)
+#   - Replaces collector config (removes auth, adds debug exporter)
+#   - Skips Grafana→Loki TLS verification
+#   - Enables anonymous Grafana access (Admin role)
+#   - Adds Routes for local browser access
+#   - Adds RustFS for local S3 evidence export
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: complytime-dev
+
+resources:
+  - ../../base
+  - routes.yaml
+  - rustfs/
+
+patches:
+  - path: patches/resources.yaml
+  - path: patches/pvcs.yaml
+  - path: patches/grafana-datasource.yaml
+  - path: patches/grafana-auth.yaml
+  - path: patches/collector-env.yaml
+
+configMapGenerator:
+  - name: collector-config
+    behavior: replace
+    files:
+      - otel-collector.yaml=configs/collector-local.yaml

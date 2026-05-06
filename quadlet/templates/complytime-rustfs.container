@@ -1,0 +1,22 @@
+[Unit]
+Description=ComplyTime RustFS - S3-compatible object storage (Apache 2.0)
+Requires=complytime-network.service
+After=complytime-network.service
+
+[Container]
+ContainerName=complytime-rustfs
+Image=docker.io/rustfs/rustfs:latest
+Network=complytime.network
+PublishPort=9000:9000
+PublishPort=9001:9001
+Volume=complytime-rustfs-storage.volume:/data
+Exec=server /data --console-address :9001
+Environment=RUSTFS_ROOT_USER=rustfsadmin
+Environment=RUSTFS_ROOT_PASSWORD=rustfsadmin
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

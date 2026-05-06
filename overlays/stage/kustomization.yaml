@@ -1,0 +1,36 @@
+# Stage (pre-production) overlay.
+# Inherits all base manifests, then:
+#   - Sets namespace to complytime-stage
+#   - Uses :test image tags for pre-production validation
+#   - Replaces collector config (adds debug exporter + debug logging)
+#   - Adds EFS storage class for PVCs
+#   - Configures OIDC authentication for Grafana
+#   - Adds imagePullSecrets for private Quay images
+#   - Adds Routes with HSTS and reencrypt TLS termination
+#
+# Before deploying, update:
+#   - routes.yaml: Set spec.host to your stage CNAMEs
+#   - patches/collector-env.yaml: Set OIDC_ISSUER_URL
+#   - patches/grafana-env.yaml: Set OIDC client ID, auth URLs, root URL
+#   - sealed-secrets/: Create SealedSecrets (see sealed-secrets/README.md)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: complytime-stage
+
+resources:
+  - ../../base
+  - routes.yaml
+
+patches:
+  - path: patches/images.yaml
+  - path: patches/pvcs.yaml
+  - path: patches/collector-env.yaml
+  - path: patches/grafana-env.yaml
+  - path: patches/imagepullsecrets.yaml
+
+configMapGenerator:
+  - name: collector-config
+    behavior: replace
+    files:
+      - otel-collector.yaml=configs/collector-stage.yaml

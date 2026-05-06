@@ -1,0 +1,31 @@
+# OpenShift Routes for local access.
+# Collector: edge termination (backend serves HTTP on 4318).
+# Grafana: passthrough termination (backend serves HTTPS on 3000).
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: collector-http
+spec:
+  host: collector.apps-crc.testing
+  to:
+    kind: Service
+    name: collector
+  port:
+    targetPort: http-4318
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: grafana
+spec:
+  host: grafana.apps-crc.testing
+  to:
+    kind: Service
+    name: grafana
+  port:
+    targetPort: https-3000
+  tls:
+    termination: passthrough

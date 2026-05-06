@@ -1,0 +1,53 @@
+version: '3'
+
+tasks:
+  default:
+    silent: true
+    cmd: task quadlet --list
+
+  _ensure-setup:
+    internal: true
+    status:
+      - test -f "${XDG_CONFIG_HOME:-$HOME/.config}/containers/systemd/complytime-collector.container"
+    cmds:
+      - "{{.ROOT_DIR}}/scripts/quadlet-setup.sh"
+
+  setup:
+    desc: "Generate certs and install quadlet units (use -- --no-tls to disable TLS)"
+    cmds:
+      - "{{.ROOT_DIR}}/scripts/quadlet-setup.sh {{.CLI_ARGS}}"
+
+  start:
+    desc: Start all ComplyTime services via systemctl --user
+    deps: [_ensure-setup]
+    cmds:
+      - "{{.ROOT_DIR}}/scripts/quadlet-start.sh"
+
+  stop:
+    desc: Stop all ComplyTime services
+    cmds:
+      - "{{.ROOT_DIR}}/scripts/quadlet-stop.sh"
+
+  restart:
+    desc: Restart all ComplyTime services
+    cmds:
+      - task: stop
+      - task: start
+
+  status:
+    desc: Show status of all ComplyTime quadlet services
+    cmds:
+      - systemctl --user --no-pager status complytime-rustfs complytime-loki complytime-collector complytime-grafana 2>/dev/null || true
+
+  logs:
+    desc: "Stream logs from a service (usage: task quadlet:logs -- collector)"
+    requires:
+      vars: [CLI_ARGS]
+    cmds:
+      - journalctl --user -u complytime-{{.CLI_ARGS}} -f
+
+  teardown:
+    desc: Stop services, remove quadlet files and generated data — DESTRUCTIVE
+    prompt: This will remove all quadlet services and data. Continue?
+    cmds:
+      - "{{.ROOT_DIR}}/scripts/quadlet-teardown.sh"

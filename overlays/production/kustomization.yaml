@@ -1,0 +1,30 @@
+# Production overlay.
+# Inherits all base manifests, then:
+#   - Sets namespace to complytime-prod
+#   - Uses :latest image tags (base defaults, explicit for clarity)
+#   - Uses base collector config (production-accurate, no debug exporter)
+#   - Adds EFS storage class for PVCs
+#   - Configures OIDC authentication for Grafana
+#   - Adds imagePullSecrets for private Quay images
+#   - Adds Routes with HSTS and reencrypt TLS termination
+#
+# Before deploying, update:
+#   - routes.yaml: Set spec.host to your production CNAMEs
+#   - patches/collector-env.yaml: Set OIDC_ISSUER_URL
+#   - patches/grafana-env.yaml: Set OIDC client ID, auth URLs, root URL
+#   - sealed-secrets/: Create SealedSecrets (see sealed-secrets/README.md)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: complytime-prod
+
+resources:
+  - ../../base
+  - routes.yaml
+
+patches:
+  - path: patches/images.yaml
+  - path: patches/pvcs.yaml
+  - path: patches/collector-env.yaml
+  - path: patches/grafana-env.yaml
+  - path: patches/imagepullsecrets.yaml

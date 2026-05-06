@@ -1,0 +1,20 @@
+# Collector service — OpenShift auto-generates TLS cert via serving-cert annotation.
+apiVersion: v1
+kind: Service
+metadata:
+  name: collector
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: collector-tls
+spec:
+  selector:
+    app: collector
+  ports:
+    - name: grpc-4317
+      port: 4317
+      targetPort: 4317
+    - name: http-4318
+      port: 4318
+      targetPort: 4318
+    - name: https-8088
+      port: 8088
+      targetPort: 8088

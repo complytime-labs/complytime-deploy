@@ -1,0 +1,9 @@
+# OpenShift auto-injects the cluster's internal CA certificate into this ConfigMap.
+# Other components mount it to verify internal TLS connections (e.g. Loki).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-ca-bundle
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+data: {}

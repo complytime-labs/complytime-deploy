@@ -1,0 +1,42 @@
+# Creates the complytime-evidence bucket in RustFS on first deploy.
+# Uses curl + S3 API directly — no external CLI tool needed.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rustfs-create-bucket
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: wait-for-rustfs
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+        command: ['sh', '-c', 'until curl -sf http://rustfs:9000/rustfs/health/ready; do sleep 2; done']
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
+      containers:
+      - name: create-bucket
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+        command:
+          - /bin/sh
+          - -c
+          - |
+            curl -sf -X PUT http://rustfsadmin:rustfsadmin@rustfs:9000/complytime-evidence || true
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
+  backoffLimit: 3

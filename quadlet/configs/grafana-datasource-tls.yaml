@@ -1,0 +1,17 @@
+# Grafana→Loki datasource for TLS deployments.
+# The @@CA_CERT@@ placeholder is replaced by the quadlet setup script.
+# Kustomize deployments patch this via overlay.
+apiVersion: 1
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: https://@@LOKI_HOST@@:3100
+    isDefault: true
+    jsonData:
+      tlsAuth: false
+      tlsAuthWithCACert: true
+      tlsSkipVerify: false
+    secureJsonData:
+      tlsCACert: |
+        @@CA_CERT@@

@@ -1,0 +1,8 @@
+# Grafana→Loki datasource for non-TLS deployments.
+apiVersion: 1
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://@@LOKI_HOST@@:3100
+    isDefault: true

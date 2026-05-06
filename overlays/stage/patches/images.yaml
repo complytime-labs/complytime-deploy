@@ -1,0 +1,12 @@
+# Stage image tags — :test for pre-production validation.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+spec:
+  template:
+    spec:
+      containers:
+        - name: collector
+          image: quay.io/huiwang/collector:test

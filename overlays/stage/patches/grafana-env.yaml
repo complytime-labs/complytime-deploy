@@ -1,0 +1,50 @@
+# Stage Grafana env vars — OIDC authentication + root URL.
+# UPDATE: Set GF_AUTH_GENERIC_OAUTH_CLIENT_ID, GF_SERVER_ROOT_URL, and
+# auth/token/api/signout URLs to match your stage Keycloak/SSO realm.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  template:
+    spec:
+      containers:
+      - name: grafana
+        env:
+          - name: GF_AUTH_ANONYMOUS_ENABLED
+            value: "false"
+          - name: GF_SERVER_PROTOCOL
+            value: "https"
+          - name: GF_SERVER_CERT_FILE
+            value: "/etc/tls/tls.crt"
+          - name: GF_SERVER_CERT_KEY
+            value: "/etc/tls/tls.key"
+          - name: GF_SERVER_ROOT_URL
+            value: "https://grafana-stage.example.com"
+          - name: GF_AUTH_GENERIC_OAUTH_ENABLED
+            value: "true"
+          - name: GF_AUTH_GENERIC_OAUTH_NAME
+            value: "Red Hat SSO"
+          - name: GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP
+            value: "true"
+          - name: GF_AUTH_GENERIC_OAUTH_CLIENT_ID
+            value: ""
+          - name: GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: grafana-oidc-secret
+                key: client_secret
+          - name: GF_AUTH_GENERIC_OAUTH_SCOPES
+            value: "openid profile email"
+          - name: GF_AUTH_GENERIC_OAUTH_AUTH_URL
+            value: ""
+          - name: GF_AUTH_GENERIC_OAUTH_TOKEN_URL
+            value: ""
+          - name: GF_AUTH_GENERIC_OAUTH_API_URL
+            value: ""
+          - name: GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH
+            value: "'Viewer'"
+          - name: GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT
+            value: "false"
+          - name: GF_AUTH_SIGNOUT_REDIRECT_URL
+            value: ""

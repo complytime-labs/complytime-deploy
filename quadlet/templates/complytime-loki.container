@@ -1,0 +1,20 @@
+[Unit]
+Description=ComplyTime Loki - log aggregation
+Requires=complytime-network.service
+After=complytime-network.service
+
+[Container]
+ContainerName=complytime-loki
+Image=docker.io/grafana/loki:3.5.1
+Network=complytime.network
+Volume=complytime-loki-storage.volume:/loki-storage
+Volume=@@RUNTIME@@/configs/loki-config.yaml:/etc/loki/local-config.yaml:ro
+Volume=@@RUNTIME@@/certs/loki:/etc/tls:ro
+Exec=-config.file=/etc/loki/local-config.yaml
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target
