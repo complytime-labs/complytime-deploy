@@ -1,2 +1,3 @@
+.env
 quadlet/runtime/
 .test-output/

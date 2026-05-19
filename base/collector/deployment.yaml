@@ -30,7 +30,7 @@ spec:
       serviceAccountName: otel-collector
       containers:
       - name: collector
-        image: quay.io/huiwang/collector:latest
+        image: quay.io/complytime/beacon-collector:latest
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

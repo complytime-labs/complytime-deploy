@@ -12,7 +12,7 @@ for arg in "$@"; do
   esac
 done
 
-COLLECTOR_IMAGE="${COLLECTOR_IMAGE:-quay.io/huiwang/collector:latest}"
+COLLECTOR_IMAGE="${COLLECTOR_IMAGE:-quay.io/complytime/beacon-collector:latest}"
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"

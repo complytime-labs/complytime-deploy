@@ -176,7 +176,7 @@ ls ~/.config/containers/systemd/
 
 ```bash
 # Check if images are accessible
-podman pull quay.io/huiwang/collector:latest
+podman pull quay.io/complytime/beacon-collector:latest
 
 # Use a local image if the upstream isn't available
 COLLECTOR_IMAGE=localhost/complybeacon/collector:latest task quadlet:setup

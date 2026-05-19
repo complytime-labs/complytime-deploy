@@ -1,2 +1,0 @@
-# Patches images for local testing.
-# Collector: uses base image (quay.io requires pull secret — see README)

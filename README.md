@@ -123,7 +123,7 @@ OpenShift Local (CRC) runs a single-node OpenShift cluster on your laptop.
 
 3. **Setup and start:**
    ```bash
-   crc setup              # Downloads ~3GB OpenShift bundle
+   task crc:setup         # Downloads ~3GB bundle, configures 6 CPUs / 16 GiB RAM
    task crc:start         # Start cluster (5-10 min, paste pull secret when prompted)
    eval $(crc oc-env)     # Add oc to PATH (add to ~/.bashrc to persist)
    ```
@@ -149,13 +149,6 @@ task crc:stop              # Stop cluster (preserves data)
 task crc:start             # Restart (no redeploy needed, just login again)
 task crc:delete            # Delete cluster and all data
 crc cleanup                # Reclaim disk space after delete
-```
-
-### CRC Resource Tuning
-
-```bash
-crc config set memory 16384    # Increase RAM (requires crc delete + start)
-crc config set cpus 6          # Increase CPUs
 ```
 
 ### CRC Troubleshooting
@@ -242,7 +235,7 @@ Run ComplyTime locally using rootless Podman with systemctl --user. No OpenShift
 # Setup (generates self-signed TLS certs, installs quadlet units)
 task quadlet:setup
 
-# Use a local collector image instead of the default (quay.io/huiwang/collector:latest)
+# Use a local collector image instead of the default (quay.io/complytime/beacon-collector:latest)
 COLLECTOR_IMAGE=localhost/complybeacon/collector:latest task quadlet:setup
 
 # Or without TLS for debugging
@@ -282,11 +275,11 @@ If you are currently deploying with the Ansible playbook, this section maps ever
 
 #### Images
 
-| Ansible Variable | Ansible Default | Kustomize Location | How to Change |
-|---|---|---|---|
-| `collector_image` | `quay.io/huiwang/collector:test` | `base/collector/deployment.yaml` | Overlay patch (`patches/images.yaml`) |
-| `loki_image` | `docker.io/grafana/loki:3.5.1` | `base/loki/deployment.yaml` | Overlay patch |
-| `grafana_image` | `grafana/grafana:11.6.0` | `base/grafana/deployment.yaml` | Overlay patch |
+| Ansible Variable  | Ansible Default                            | Kustomize Location               | How to Change                         |
+|-------------------|--------------------------------------------|----------------------------------|---------------------------------------|
+| `collector_image` | `quay.io/complytime/beacon-collector:test` | `base/collector/deployment.yaml` | Overlay patch (`patches/images.yaml`) |
+| `loki_image`      | `docker.io/grafana/loki:3.5.1`             | `base/loki/deployment.yaml`      | Overlay patch                         |
+| `grafana_image`   | `grafana/grafana:11.6.0`                   | `base/grafana/deployment.yaml`   | Overlay patch                         |
 
 #### Namespace and Cluster
 
@@ -408,22 +401,60 @@ COLLECTOR_IMAGE=localhost/complybeacon/collector:latest task quadlet:setup
 task quadlet:restart
 ```
 
-The default is `quay.io/huiwang/collector:latest`. Re-run setup to switch back.
+The default is `quay.io/complytime/beacon-collector:latest`. Re-run setup to switch back.
 
 #### CRC (OpenShift Local)
 
-Push the image to CRC's internal registry and update the local overlay:
+CRC includes an internal image registry. Push your local image there, then patch the deployment to use it.
 
 ```bash
-# Push to CRC internal registry
-oc registry login
+# 1. Log in to CRC's internal registry (accepts its self-signed cert)
+oc registry login --insecure=true
+
+# 2. Tag your local image for the internal registry
 podman tag localhost/complybeacon/collector:latest \
   $(oc registry info)/complytime-dev/collector:dev
-podman push $(oc registry info)/complytime-dev/collector:dev
 
-# Update image in overlay and redeploy
-oc apply -k overlays/local
+# 3. Push (--tls-verify=false because CRC's registry uses a self-signed cert)
+podman push --tls-verify=false \
+  $(oc registry info)/complytime-dev/collector:dev
+
+# 4. Patch the deployment to use the pushed image
+#    Inside the cluster, the registry is at image-registry.openshift-image-registry.svc:5000
+oc set image deployment/collector \
+  collector=image-registry.openshift-image-registry.svc:5000/complytime-dev/collector:dev \
+  -n complytime-dev
 ```
+
+To switch back to the upstream image:
+
+```bash
+oc set image deployment/collector \
+  collector=quay.io/complytime/beacon-collector:latest \
+  -n complytime-dev
+```
+
+After either change, OpenShift rolls out a new pod automatically. Watch progress with `oc rollout status deployment/collector -n complytime-dev`.
+
+**Iterating:** When you rebuild and push a new version of the same `collector:dev` tag, delete the running pod to force a re-pull (Kubernetes caches `imagePullPolicy: IfNotPresent` by default for named tags):
+
+```bash
+podman push --tls-verify=false $(oc registry info)/complytime-dev/collector:dev
+oc delete pod -l app=collector -n complytime-dev
+```
+
+**Note:** `oc set image` patches the live deployment directly. Running `task sk:dev` or `task sk:run` redeploys from the kustomize overlay and resets the image back to the base default (`quay.io/complytime/beacon-collector:latest`).
+
+**Using the overlay instead:** If you want `task sk:dev` and `task sk:run` to deploy your custom image (so Skaffold doesn't reset it on every cycle), add a kustomize `images` transformer to `overlays/local/kustomization.yaml`:
+
+```yaml
+images:
+  - name: quay.io/complytime/beacon-collector
+    newName: image-registry.openshift-image-registry.svc:5000/complytime-dev/collector
+    newTag: dev
+```
+
+This only affects the local overlay — stage and production continue pulling from quay.io. Remove the `images:` block when you're done testing to return to the upstream default. Don't commit this change unless the team agrees to a new default.
 
 ## Repository Structure
 

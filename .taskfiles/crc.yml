@@ -1,5 +1,9 @@
 version: '3'
 
+vars:
+  CRC_CPUS: '{{.CRC_CPUS | default "6"}}'
+  CRC_MEMORY: '{{.CRC_MEMORY | default "16384"}}'
+
 tasks:
   default:
     silent: true
@@ -10,6 +14,17 @@ tasks:
     preconditions:
       - sh: command -v crc
         msg: "crc not installed — download from https://developers.redhat.com/products/openshift-local"
+
+  setup:
+    desc: Initial CRC setup — downloads bundle and configures resources ({{.CRC_CPUS}} CPUs, {{.CRC_MEMORY}} MiB RAM)
+    deps: [_require-crc]
+    cmds:
+      - crc setup
+      - crc config set cpus {{.CRC_CPUS}}
+      - crc config set memory {{.CRC_MEMORY}}
+      - echo ''
+      - echo "CRC configured with {{.CRC_CPUS}} CPUs and {{.CRC_MEMORY}} MiB RAM."
+      - 'echo "Next: task crc:start"'
 
   start:
     desc: Start OpenShift Local cluster
@@ -32,6 +47,15 @@ tasks:
     deps: [_require-crc]
     cmds:
       - crc status
+      - silent: true
+        cmd: |
+          printf '\nSealedSecrets controller: '
+          if oc -n kube-system get deployment/sealed-secrets-controller -o jsonpath='{.status.availableReplicas}' 2>/dev/null | grep -q '^[1-9]'; then
+            echo 'enabled'
+          else
+            echo 'not found'
+          fi
+        ignore_error: true
 
   login:
     desc: Log in to the CRC cluster (opens browser)
@@ -50,7 +74,7 @@ tasks:
         msg: "Not logged into a cluster — run 'task crc:login' first"
     cmds:
       - oc apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.24.1/controller.yaml
-      - oc -n kube-system rollout status deployment/sealed-secrets-controller --timeout=120s
+      - oc -n kube-system rollout status deployment/sealed-secrets-controller --timeout=240s
 
   delete:
     desc: Delete the CRC cluster and all data — DESTRUCTIVE
@@ -58,3 +82,10 @@ tasks:
     prompt: "This will destroy the CRC cluster and all its data. Continue?"
     cmds:
       - crc delete
+
+  clean:
+    desc: Delete the CRC cluster and reclaim disk space — DESTRUCTIVE
+    deps: [_require-crc]
+    cmds:
+      - task: delete
+      - crc cleanup

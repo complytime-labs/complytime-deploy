@@ -9,4 +9,4 @@ spec:
     spec:
       containers:
         - name: collector
-          image: quay.io/huiwang/collector:latest
+          image: quay.io/complytime/beacon-collector:latest

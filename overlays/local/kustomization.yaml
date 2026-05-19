@@ -1,7 +1,7 @@
 # Local development overlay for OpenShift Local (CRC).
 # Inherits all base manifests, then:
 #   - Sets namespace to complytime-dev
-#   - Uses base images (no image patches)
+#   - Uses base images (to test a local image, see "Testing Local Images" in README)
 #   - Reduces resource limits for laptop
 #   - Changes PVC access mode to ReadWriteOnce (CRC hostpath)
 #   - Replaces collector config (removes auth, adds debug exporter)
