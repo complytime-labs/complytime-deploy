@@ -7,6 +7,7 @@ After=complytime-network.service
 ContainerName=complytime-loki
 Image=docker.io/grafana/loki:3.5.1
 Network=complytime.network
+PublishPort=3100:3100
 Volume=complytime-loki-storage.volume:/loki-storage
 Volume=@@RUNTIME@@/configs/loki-config.yaml:/etc/loki/local-config.yaml:ro
 Volume=@@RUNTIME@@/certs/loki:/etc/tls:ro

@@ -8,6 +8,9 @@ vars:
   TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'
   NAMESPACE: "complytime-dev"
   INTEGRATION_DIR: "tests/integration"
+  # Deployment mode: crc (OpenShift Local) or quadlet (Podman Quadlet)
+  MODE: '{{.MODE | default "crc"}}'
+  QUADLET_RUNTIME: "quadlet/runtime"
 
 tasks:
   default:
@@ -27,14 +30,18 @@ tasks:
     desc: Install complyctl and venom
     cmds:
       - |
-        # Check prerequisites
-        for cmd in jq yq curl oc; do
+        # Check prerequisites (oc only required for crc mode)
+        REQUIRED="jq yq curl"
+        if [ "{{.MODE}}" = "crc" ]; then
+          REQUIRED="$REQUIRED oc"
+        fi
+        for cmd in $REQUIRED; do
           if ! command -v "$cmd" &>/dev/null; then
             echo "ERROR: $cmd not found"
             exit 1
           fi
         done
-        echo "OK: prerequisites available"
+        echo "OK: prerequisites available (mode={{.MODE}})"
       - |
         # Install complyctl
         if command -v complyctl &>/dev/null && complyctl version 2>&1 | grep -q "{{.COMPLYCTL_VERSION}}"; then
@@ -64,26 +71,36 @@ tasks:
         fi
 
   extract-ca:
-    desc: Extract OpenShift service CA certificate
+    desc: Extract CA certificate for TLS verification
     cmds:
       - |
         mkdir -p "{{.TEST_DIR}}"
-        echo "Extracting service CA from namespace {{.NAMESPACE}}..."
-        # Poll for CA bundle (may take a few seconds after deploy)
-        for i in $(seq 1 12); do
-          CA=$(oc get configmap service-ca-bundle -n "{{.NAMESPACE}}" \
-            -o jsonpath='{.data.service-ca\.crt}' 2>/dev/null) || true
-          if [ -n "$CA" ]; then
-            echo "$CA" > "{{.TEST_DIR}}/service-ca.crt"
-            echo "OK: service CA extracted to {{.TEST_DIR}}/service-ca.crt"
-            exit 0
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          CA_SRC="{{.QUADLET_RUNTIME}}/certs/ca.crt"
+          if [ ! -f "$CA_SRC" ]; then
+            echo "ERROR: Quadlet CA cert not found at $CA_SRC"
+            echo "  Run: task quadlet:setup"
+            exit 1
           fi
-          echo "  Waiting for service CA bundle... ($i/12)"
-          sleep 5
-        done
-        echo "ERROR: service CA bundle not available after 60s"
-        echo "  Ensure the stack is deployed: task sk:run"
-        exit 1
+          cp "$CA_SRC" "{{.TEST_DIR}}/service-ca.crt"
+          echo "OK: Quadlet CA cert copied to {{.TEST_DIR}}/service-ca.crt"
+        else
+          echo "Extracting service CA from namespace {{.NAMESPACE}}..."
+          for i in $(seq 1 12); do
+            CA=$(oc get configmap service-ca-bundle -n "{{.NAMESPACE}}" \
+              -o jsonpath='{.data.service-ca\.crt}' 2>/dev/null) || true
+            if [ -n "$CA" ]; then
+              echo "$CA" > "{{.TEST_DIR}}/service-ca.crt"
+              echo "OK: service CA extracted to {{.TEST_DIR}}/service-ca.crt"
+              exit 0
+            fi
+            echo "  Waiting for service CA bundle... ($i/12)"
+            sleep 5
+          done
+          echo "ERROR: service CA bundle not available after 60s"
+          echo "  Ensure the stack is deployed: task sk:run"
+          exit 1
+        fi
 
   pull-bundle:
     desc: Pull OCI policy bundle via complyctl
@@ -126,22 +143,36 @@ tasks:
           exit 1
         fi
         mkdir -p "{{.TEST_DIR}}"
-        venom run "{{.INTEGRATION_DIR}}/evidence-pipeline.venom.yml" \
-          --lib-dir "{{.INTEGRATION_DIR}}/lib" \
-          --output-dir "{{.TEST_DIR}}" \
-          --var "ca_cert={{.TEST_DIR}}/service-ca.crt" \
-          -v
+        VENOM_ARGS=(
+          "{{.INTEGRATION_DIR}}/evidence-pipeline.venom.yml"
+          --lib-dir "{{.INTEGRATION_DIR}}/lib"
+          --output-dir "{{.TEST_DIR}}"
+          --var "ca_cert={{.TEST_DIR}}/service-ca.crt"
+        )
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          # Quadlet certs have SAN DNS:localhost — connect directly
+          VENOM_ARGS+=(
+            --var "collector_host=localhost"
+            --var "loki_host=localhost"
+            --var "rustfs_host=localhost"
+          )
+        fi
+        venom run "${VENOM_ARGS[@]}" -v
 
   check-stack:
-    desc: Verify the CRC stack is reachable
+    desc: Verify the stack is reachable
     internal: true
     cmds:
       - |
         if curl -sf -k https://localhost:8088/eventreceiver/healthcheck >/dev/null 2>&1; then
-          echo "OK: collector webhook reachable"
+          echo "OK: collector webhook reachable (mode={{.MODE}})"
         else
           echo "ERROR: collector webhook not reachable at https://localhost:8088"
-          echo "  Ensure the stack is running: task sk:run"
+          if [ "{{.MODE}}" = "quadlet" ]; then
+            echo "  Ensure the stack is running: task quadlet:start"
+          else
+            echo "  Ensure the stack is running: task sk:run"
+          fi
           exit 1
         fi
 
@@ -150,4 +181,4 @@ tasks:
     cmds:
       - rm -rf "{{.TEST_DIR}}"
       - rm -rf "{{.HOME}}/.complytime/policies"
-      - echo "OK: test artifacts cleaned"
+      - 'echo "OK: test artifacts cleaned"'
