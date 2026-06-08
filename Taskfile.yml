@@ -2,6 +2,8 @@
 # Requires: https://taskfile.dev
 version: '3'
 
+silent: true
+
 includes:
   sk:
     taskfile: .taskfiles/sk.yml
