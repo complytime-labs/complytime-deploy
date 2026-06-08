@@ -60,6 +60,9 @@ steps:
       - "{{.input.collector_host}}:{{.input.webhook_port}}:127.0.0.1"
     assertions:
       - result.statuscode ShouldEqual 200
+    vars:
+      http_status:
+        from: result.statuscode
 
 output:
-  status_code: "{{.result.statuscode}}"
+  status_code: "{{.http_status}}"
