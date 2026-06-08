@@ -8,7 +8,6 @@ spec:
   template:
     spec:
       restartPolicy: OnFailure
-      hostUsers: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:

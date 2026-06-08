@@ -15,7 +15,6 @@ spec:
       labels:
         app: rustfs
     spec:
-      hostUsers: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
