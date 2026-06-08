@@ -20,10 +20,11 @@ tasks:
       - task --list integration
 
   setup:
-    desc: Install tools, extract service CA, pull OCI bundle
+    desc: Install tools, extract CA, start port-forwards, pull OCI bundle
     cmds:
       - task: install-tools
       - task: extract-ca
+      - task: port-forward
       - task: pull-bundle
 
   install-tools:
@@ -122,6 +123,47 @@ tasks:
       - task: test-pull
       - task: test-pipeline
 
+  port-forward:
+    desc: Start oc port-forward for all services (CRC mode only)
+    cmds:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          echo "Quadlet publishes ports directly — port-forward not needed"
+          exit 0
+        fi
+        # Kill any stale port-forwards from a previous run
+        pkill -f "oc port-forward.*-n {{.NAMESPACE}}" 2>/dev/null || true
+        sleep 1
+        mkdir -p "{{.TEST_DIR}}"
+
+        for FWD in "svc/collector 8088:8088" "svc/collector 4318:4318" "svc/collector 4317:4317" \
+                   "svc/loki 3100:3100" "svc/rustfs 9000:9000" "svc/grafana 3000:3000"; do
+          SVC=$(echo "$FWD" | cut -d' ' -f1)
+          PORTS=$(echo "$FWD" | cut -d' ' -f2)
+          LOCAL_PORT=$(echo "$PORTS" | cut -d: -f1)
+          # Check if port is already forwarded
+          if curl -sf -k "https://localhost:${LOCAL_PORT}" >/dev/null 2>&1 || \
+             curl -sf "http://localhost:${LOCAL_PORT}" >/dev/null 2>&1; then
+            echo "OK: port $LOCAL_PORT already reachable"
+            continue
+          fi
+          oc port-forward "$SVC" "$PORTS" -n "{{.NAMESPACE}}" &>/dev/null &
+          echo "  Forwarding $SVC $PORTS (pid $!)"
+        done
+        sleep 2
+        echo "OK: port-forwards started (kill with: task integration:port-forward-stop)"
+
+  port-forward-stop:
+    desc: Stop all oc port-forward processes for the test namespace
+    cmds:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          echo "Quadlet publishes ports directly — nothing to stop"
+          exit 0
+        fi
+        pkill -f "oc port-forward.*-n {{.NAMESPACE}}" 2>/dev/null || true
+        echo "OK: port-forwards stopped"
+
   test-pull:
     desc: Run complyctl pull test suite
     cmds:
@@ -171,7 +213,10 @@ tasks:
           if [ "{{.MODE}}" = "quadlet" ]; then
             echo "  Ensure the stack is running: task quadlet:start"
           else
-            echo "  Ensure the stack is running: task sk:run"
+            echo "  If using sk:run, start port-forwards first:"
+            echo "    task integration:port-forward"
+            echo "  Or use sk:dev which forwards automatically:"
+            echo "    task sk:dev"
           fi
           exit 1
         fi
