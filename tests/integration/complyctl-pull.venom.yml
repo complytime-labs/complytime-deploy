@@ -33,17 +33,17 @@ testcases:
             force-push-restriction \
             pull-request-enforcement)
           if [ "$CONTROLS" = "$EXPECTED" ]; then
-            echo "PASS: found 5 expected controls"
+            echo "PASS found 5 expected controls"
             echo "$CONTROLS"
           else
-            echo "FAIL: unexpected controls"
+            echo "FAIL unexpected controls"
             echo "got: $CONTROLS"
             echo "expected: $EXPECTED"
             exit 1
           fi
         assertions:
           - result.code ShouldEqual 0
-          - result.systemout ShouldContainSubstring "PASS: found 5 expected controls"
+          - result.systemout ShouldContainSubstring "PASS found 5 expected controls"
           - result.systemout ShouldContainSubstring "pull-request-enforcement"
           - result.systemout ShouldContainSubstring "approval-requirements"
           - result.systemout ShouldContainSubstring "force-push-restriction"
