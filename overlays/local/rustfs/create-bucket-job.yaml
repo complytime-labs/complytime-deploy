@@ -15,11 +15,16 @@ spec:
       initContainers:
       - name: wait-for-rustfs
         image: registry.access.redhat.com/ubi10/ubi-minimal@sha256:2c20ac20ca1ecbbbd583603feabd9cc51e7e8ea5a82e5088e20a9494794b2574
-        command: ['sh', '-c', 'until curl -sf http://rustfs:9000/health; do sleep 2; done']
+        command: ['sh', '-c', 'until curl -sf --cacert /etc/ssl/certs/service-ca.crt https://rustfs:9000/health; do sleep 2; done']
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop: [ALL]
+        volumeMounts:
+          - name: service-ca
+            mountPath: /etc/ssl/certs/service-ca.crt
+            subPath: service-ca.crt
+            readOnly: true
       containers:
       - name: create-bucket
         image: registry.access.redhat.com/ubi10/ubi-minimal@sha256:2c20ac20ca1ecbbbd583603feabd9cc51e7e8ea5a82e5088e20a9494794b2574
@@ -27,7 +32,7 @@ spec:
           - /bin/sh
           - -c
           - |
-            curl -sf -X PUT http://rustfsadmin:rustfsadmin@rustfs:9000/complytime-evidence || true
+            curl -sf --cacert /etc/ssl/certs/service-ca.crt -X PUT https://rustfsadmin:rustfsadmin@rustfs:9000/complytime-evidence || true
         resources:
           requests:
             memory: "64Mi"
@@ -39,4 +44,13 @@ spec:
           allowPrivilegeEscalation: false
           capabilities:
             drop: [ALL]
+        volumeMounts:
+          - name: service-ca
+            mountPath: /etc/ssl/certs/service-ca.crt
+            subPath: service-ca.crt
+            readOnly: true
+      volumes:
+      - name: service-ca
+        configMap:
+          name: service-ca-bundle
   backoffLimit: 3

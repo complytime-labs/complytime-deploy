@@ -38,13 +38,25 @@ spec:
             value: "rustfsadmin"
           - name: RUSTFS_SECRET_KEY
             value: "rustfsadmin"
+          - name: RUSTFS_CERT_FILE
+            value: "/etc/tls/tls.crt"
+          - name: RUSTFS_CERT_KEY_FILE
+            value: "/etc/tls/tls.key"
         volumeMounts:
           - name: data
             mountPath: /data
+          - name: tls
+            mountPath: /etc/tls
+            readOnly: true
+          - name: service-ca
+            mountPath: /etc/ssl/certs/service-ca.crt
+            subPath: service-ca.crt
+            readOnly: true
         readinessProbe:
           httpGet:
             path: /health
             port: 9000
+            scheme: HTTPS
           initialDelaySeconds: 5
           periodSeconds: 10
         resources:
@@ -58,3 +70,9 @@ spec:
       - name: data
         persistentVolumeClaim:
           claimName: rustfs-storage
+      - name: tls
+        secret:
+          secretName: rustfs-tls
+      - name: service-ca
+        configMap:
+          name: service-ca-bundle

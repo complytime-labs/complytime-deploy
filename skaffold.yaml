@@ -39,6 +39,10 @@ portForward:
     resourceName: rustfs
     port: 9000
     localPort: 9000
+  - resourceType: service
+    resourceName: loki
+    port: 3100
+    localPort: 3100
 
 profiles:
   - name: stage

@@ -10,9 +10,12 @@ Network=complytime.network
 PublishPort=9000:9000
 PublishPort=9001:9001
 Volume=complytime-rustfs-storage.volume:/data
+Volume=@@RUNTIME@@/certs/rustfs:/etc/tls:ro
 Exec=server /data --console-address :9001
 Environment=RUSTFS_ACCESS_KEY=rustfsadmin
 Environment=RUSTFS_SECRET_KEY=rustfsadmin
+Environment=RUSTFS_CERT_FILE=/etc/tls/tls.crt
+Environment=RUSTFS_CERT_KEY_FILE=/etc/tls/tls.key
 
 [Service]
 Restart=always

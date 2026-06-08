@@ -131,6 +131,8 @@ exporters:
       s3_partition_format: ""
       file_prefix: "evidence_"
       s3_force_path_style: true
+      disable_ssl: false
+      insecure: true  # Accept OpenShift service CA self-signed cert
     resource_attrs_to_s3:
       s3_prefix: "policy.rule.id"
 
