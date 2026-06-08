@@ -1,34 +1,49 @@
 executor: poll-s3
 input:
-  rustfs_host: ""
   s3_port: "9000"
   bucket: ""
   prefix: ""
-  ca_cert: ""
-  timeout: "30"
+  timeout: "60"
   interval: "3"
 
 steps:
   - type: exec
     script: |
       DEADLINE=$(($(date +%s) + {{.input.timeout}}))
+      ATTEMPT=0
+      echo "POLL: bucket={{.input.bucket}} prefix={{.input.prefix}} timeout={{.input.timeout}}s" >&2
       while [ $(date +%s) -lt $DEADLINE ]; do
-        RESPONSE=$(curl -sf \
-          --cacert "{{.input.ca_cert}}" \
-          --resolve "{{.input.rustfs_host}}:{{.input.s3_port}}:127.0.0.1" \
-          "https://{{.input.rustfs_host}}:{{.input.s3_port}}/{{.input.bucket}}?list-type=2&prefix={{.input.prefix}}" \
-          2>/dev/null) || true
-        if [ -n "$RESPONSE" ]; then
-          if echo "$RESPONSE" | grep -q "evidence_"; then
-            KEYS=$(echo "$RESPONSE" | grep -o '<Key>[^<]*</Key>' | sed 's/<[^>]*>//g')
-            echo "FOUND: evidence objects under prefix {{.input.prefix}}"
+        ATTEMPT=$((ATTEMPT + 1))
+        REMAINING=$((DEADLINE - $(date +%s)))
+        HTTP_CODE=$(curl -s -o /tmp/s3_response.xml -w '%{http_code}' \
+          "http://127.0.0.1:{{.input.s3_port}}/{{.input.bucket}}?list-type=2&prefix={{.input.prefix}}" \
+          2>/tmp/s3_err.txt) || HTTP_CODE="000"
+        if [ "$HTTP_CODE" = "200" ]; then
+          if grep -q "evidence_" /tmp/s3_response.xml 2>/dev/null; then
+            KEYS=$(grep -o '<Key>[^<]*</Key>' /tmp/s3_response.xml | sed 's/<[^>]*>//g')
+            echo "FOUND: evidence objects under prefix {{.input.prefix}} (attempt $ATTEMPT)"
             echo "$KEYS"
+            rm -f /tmp/s3_response.xml /tmp/s3_err.txt
             exit 0
           fi
+          KEY_COUNT=$(grep -c '<Key>' /tmp/s3_response.xml 2>/dev/null) || KEY_COUNT=0
+          echo "  poll-s3 attempt $ATTEMPT: HTTP $HTTP_CODE, $KEY_COUNT keys (no evidence_* match) (${REMAINING}s remaining)" >&2
+        elif [ "$HTTP_CODE" = "000" ]; then
+          CURL_ERR=$(grep -i "error\|fail\|refused\|reset\|SSL\|tls\|connect" /tmp/s3_err.txt 2>/dev/null | tail -3)
+          echo "  poll-s3 attempt $ATTEMPT: connection failed (HTTP $HTTP_CODE) (${REMAINING}s remaining)" >&2
+          [ -n "$CURL_ERR" ] && echo "    $CURL_ERR" >&2
+        else
+          BODY=$(cat /tmp/s3_response.xml 2>/dev/null | head -c 200)
+          echo "  poll-s3 attempt $ATTEMPT: HTTP $HTTP_CODE: $BODY (${REMAINING}s remaining)" >&2
         fi
         sleep {{.input.interval}}
       done
-      echo "TIMEOUT: no evidence objects under prefix {{.input.prefix}} after {{.input.timeout}}s"
+      echo "TIMEOUT: no evidence objects under prefix {{.input.prefix}} after {{.input.timeout}}s ($ATTEMPT attempts)"
+      if [ -f /tmp/s3_response.xml ]; then
+        echo "Last response:"
+        cat /tmp/s3_response.xml | head -c 500
+      fi
+      rm -f /tmp/s3_response.xml /tmp/s3_err.txt
       exit 1
     assertions:
       - result.code ShouldEqual 0

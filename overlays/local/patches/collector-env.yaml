@@ -12,7 +12,7 @@ spec:
           - name: LOKI_HOST
             value: "loki"
           - name: S3_ENDPOINT
-            value: "https://rustfs:9000"
+            value: "http://rustfs:9000"
           - name: S3_BUCKETNAME
             value: "complytime-evidence"
           - name: S3_OBJ_DIR

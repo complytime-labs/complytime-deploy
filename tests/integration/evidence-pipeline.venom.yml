@@ -2,7 +2,6 @@ name: Evidence pipeline end-to-end
 vars:
   collector_host: "collector.complytime-dev.svc"
   loki_host: "loki.complytime-dev.svc"
-  rustfs_host: "rustfs.complytime-dev.svc"
   webhook_port: "8088"
   loki_port: "3100"
   s3_port: "9000"
@@ -35,18 +34,16 @@ testcases:
         assertions:
           - result.status_code ShouldEqual "200"
       - type: poll-loki
-        query: '{policy_rule_id="pull-request-enforcement"}'
+        value: "pull-request-enforcement"
         loki_host: "{{.loki_host}}"
         loki_port: "{{.loki_port}}"
         ca_cert: "{{.ca_cert}}"
         assertions:
           - result.log_line ShouldNotBeEmpty
       - type: poll-s3
-        rustfs_host: "{{.rustfs_host}}"
         s3_port: "{{.s3_port}}"
         bucket: "{{.s3_bucket}}"
         prefix: "{{.s3_obj_dir}}/pull-request-enforcement/"
-        ca_cert: "{{.ca_cert}}"
         assertions:
           - result.keys ShouldContainSubstring "evidence_"
 
@@ -62,18 +59,16 @@ testcases:
         assertions:
           - result.status_code ShouldEqual "200"
       - type: poll-loki
-        query: '{policy_rule_id="approval-requirements"}'
+        value: "approval-requirements"
         loki_host: "{{.loki_host}}"
         loki_port: "{{.loki_port}}"
         ca_cert: "{{.ca_cert}}"
         assertions:
           - result.log_line ShouldNotBeEmpty
       - type: poll-s3
-        rustfs_host: "{{.rustfs_host}}"
         s3_port: "{{.s3_port}}"
         bucket: "{{.s3_bucket}}"
         prefix: "{{.s3_obj_dir}}/approval-requirements/"
-        ca_cert: "{{.ca_cert}}"
         assertions:
           - result.keys ShouldContainSubstring "evidence_"
 
@@ -89,18 +84,16 @@ testcases:
         assertions:
           - result.status_code ShouldEqual "200"
       - type: poll-loki
-        query: '{policy_rule_id="force-push-restriction"}'
+        value: "force-push-restriction"
         loki_host: "{{.loki_host}}"
         loki_port: "{{.loki_port}}"
         ca_cert: "{{.ca_cert}}"
         assertions:
           - result.log_line ShouldNotBeEmpty
       - type: poll-s3
-        rustfs_host: "{{.rustfs_host}}"
         s3_port: "{{.s3_port}}"
         bucket: "{{.s3_bucket}}"
         prefix: "{{.s3_obj_dir}}/force-push-restriction/"
-        ca_cert: "{{.ca_cert}}"
         assertions:
           - result.keys ShouldContainSubstring "evidence_"
 
@@ -116,18 +109,16 @@ testcases:
         assertions:
           - result.status_code ShouldEqual "200"
       - type: poll-loki
-        query: '{policy_rule_id="admin-bypass-prevention"}'
+        value: "admin-bypass-prevention"
         loki_host: "{{.loki_host}}"
         loki_port: "{{.loki_port}}"
         ca_cert: "{{.ca_cert}}"
         assertions:
           - result.log_line ShouldNotBeEmpty
       - type: poll-s3
-        rustfs_host: "{{.rustfs_host}}"
         s3_port: "{{.s3_port}}"
         bucket: "{{.s3_bucket}}"
         prefix: "{{.s3_obj_dir}}/admin-bypass-prevention/"
-        ca_cert: "{{.ca_cert}}"
         assertions:
           - result.keys ShouldContainSubstring "evidence_"
 
@@ -143,17 +134,15 @@ testcases:
         assertions:
           - result.status_code ShouldEqual "200"
       - type: poll-loki
-        query: '{policy_rule_id="code-owner-enforcement"}'
+        value: "code-owner-enforcement"
         loki_host: "{{.loki_host}}"
         loki_port: "{{.loki_port}}"
         ca_cert: "{{.ca_cert}}"
         assertions:
           - result.log_line ShouldNotBeEmpty
       - type: poll-s3
-        rustfs_host: "{{.rustfs_host}}"
         s3_port: "{{.s3_port}}"
         bucket: "{{.s3_bucket}}"
         prefix: "{{.s3_obj_dir}}/code-owner-enforcement/"
-        ca_cert: "{{.ca_cert}}"
         assertions:
           - result.keys ShouldContainSubstring "evidence_"

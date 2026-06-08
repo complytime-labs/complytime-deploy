@@ -200,7 +200,7 @@ tasks:
           --lib-dir "{{.INTEGRATION_DIR}}/lib" \
           --output-dir "{{.TEST_DIR}}" \
           --var "HOME={{.HOME}}" \
-          -v
+          -vv
 
   test-pipeline:
     desc: Run evidence pipeline test suite
@@ -224,10 +224,9 @@ tasks:
           VENOM_ARGS+=(
             --var "collector_host=localhost"
             --var "loki_host=localhost"
-            --var "rustfs_host=localhost"
           )
         fi
-        venom run "${VENOM_ARGS[@]}" -v
+        venom run "${VENOM_ARGS[@]}" -vv --stop-on-failure
 
   check-stack:
     desc: Verify the stack is reachable

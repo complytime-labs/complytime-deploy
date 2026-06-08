@@ -49,20 +49,35 @@ steps:
       payload:
         from: result.systemout
 
-  - type: http
-    url: "https://{{.input.collector_host}}:{{.input.webhook_port}}/eventsource/receiver"
-    method: POST
-    headers:
-      Content-Type: application/json
-    body: "{{.payload}}"
-    tls_root_ca: "{{.input.ca_cert}}"
-    resolve:
-      - "{{.input.collector_host}}:{{.input.webhook_port}}:127.0.0.1"
+  - type: exec
+    script: |
+      cat > /tmp/evidence_payload.json <<'ENDJSON'
+      {{.payload}}
+      ENDJSON
+      HTTP_CODE=$(curl -s -o /tmp/post_response.txt -w '%{http_code}' \
+        --http1.1 \
+        --cacert "{{.input.ca_cert}}" \
+        --resolve "{{.input.collector_host}}:{{.input.webhook_port}}:127.0.0.1" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -d @/tmp/evidence_payload.json \
+        "https://{{.input.collector_host}}:{{.input.webhook_port}}/eventsource/receiver" \
+        2>/tmp/post_err.txt)
+      echo "HTTP_STATUS=${HTTP_CODE}"
+      if [ "$HTTP_CODE" != "200" ]; then
+        echo "POST failed: HTTP $HTTP_CODE" >&2
+        cat /tmp/post_response.txt 2>/dev/null >&2
+        cat /tmp/post_err.txt 2>/dev/null >&2
+      fi
+      rm -f /tmp/post_response.txt /tmp/post_err.txt /tmp/evidence_payload.json
+      [ "$HTTP_CODE" = "200" ]
     assertions:
-      - result.statuscode ShouldEqual 200
+      - result.code ShouldEqual 0
+      - result.systemout ShouldContainSubstring "HTTP_STATUS=200"
     vars:
       http_status:
-        from: result.statuscode
+        from: result.systemout
+        regex: "HTTP_STATUS=(\\d+)"
 
 output:
   status_code: "{{.http_status}}"

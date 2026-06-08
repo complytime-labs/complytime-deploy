@@ -1,5 +1,5 @@
 # Creates the complytime-evidence bucket in RustFS on first deploy.
-# Uses curl + S3 API directly — no external CLI tool needed.
+# Uses the rustfs/rc client for proper S3-authenticated bucket creation.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -14,25 +14,38 @@ spec:
           type: RuntimeDefault
       initContainers:
       - name: wait-for-rustfs
-        image: registry.access.redhat.com/ubi10/ubi-minimal@sha256:2c20ac20ca1ecbbbd583603feabd9cc51e7e8ea5a82e5088e20a9494794b2574
-        command: ['sh', '-c', 'until curl -sf --cacert /etc/ssl/certs/service-ca.crt https://rustfs:9000/health; do sleep 2; done']
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop: [ALL]
-        volumeMounts:
-          - name: service-ca
-            mountPath: /etc/ssl/certs/service-ca.crt
-            subPath: service-ca.crt
-            readOnly: true
-      containers:
-      - name: create-bucket
-        image: registry.access.redhat.com/ubi10/ubi-minimal@sha256:2c20ac20ca1ecbbbd583603feabd9cc51e7e8ea5a82e5088e20a9494794b2574
+        image: docker.io/rustfs/rc@sha256:ca85fbee9f96425446915cb08b41d5e246c782eeb3f6a00d3b8294fce5219891
         command:
           - /bin/sh
           - -c
           - |
-            curl -sf --cacert /etc/ssl/certs/service-ca.crt -X PUT https://rustfsadmin:rustfsadmin@rustfs:9000/complytime-evidence || true
+            until rc alias set local http://rustfs:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" 2>/dev/null; do
+              echo "waiting for rustfs..."
+              sleep 2
+            done
+        env:
+          - name: AWS_ACCESS_KEY_ID
+            value: rustfsadmin
+          - name: AWS_SECRET_ACCESS_KEY
+            value: rustfsadmin
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
+      containers:
+      - name: create-bucket
+        image: docker.io/rustfs/rc@sha256:ca85fbee9f96425446915cb08b41d5e246c782eeb3f6a00d3b8294fce5219891
+        command:
+          - /bin/sh
+          - -c
+          - |
+            rc alias set local http://rustfs:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
+            rc mb --ignore-existing local/complytime-evidence
+        env:
+          - name: AWS_ACCESS_KEY_ID
+            value: rustfsadmin
+          - name: AWS_SECRET_ACCESS_KEY
+            value: rustfsadmin
         resources:
           requests:
             memory: "64Mi"
@@ -44,13 +57,4 @@ spec:
           allowPrivilegeEscalation: false
           capabilities:
             drop: [ALL]
-        volumeMounts:
-          - name: service-ca
-            mountPath: /etc/ssl/certs/service-ca.crt
-            subPath: service-ca.crt
-            readOnly: true
-      volumes:
-      - name: service-ca
-        configMap:
-          name: service-ca-bundle
   backoffLimit: 3

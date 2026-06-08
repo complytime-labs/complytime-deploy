@@ -82,7 +82,7 @@ if [ "$TLS_ENABLED" = true ]; then
   echo "  CA certificate generated"
 
   # Generate per-service certs signed by CA
-  for svc in loki collector grafana rustfs; do
+  for svc in loki collector grafana; do
     openssl req -newkey rsa:2048 -keyout "$CERT_DIR/$svc.key" -out "$CERT_DIR/$svc.csr" \
       -nodes -subj "/CN=complytime-$svc" 2>/dev/null
 
@@ -153,11 +153,10 @@ echo "  Configuration files generated"
 
 # --- Collector environment file ---
 
-S3_SCHEME=$( [ "$TLS_ENABLED" = true ] && echo "https" || echo "http" )
-cat > "$RUNTIME_DIR/env/collector.env" <<ENVFILE
+cat > "$RUNTIME_DIR/env/collector.env" <<'ENVFILE'
 LOKI_HOST=complytime-loki
 OIDC_ISSUER_URL=
-S3_ENDPOINT=${S3_SCHEME}://complytime-rustfs:9000
+S3_ENDPOINT=http://complytime-rustfs:9000
 S3_BUCKETNAME=complytime-evidence
 S3_OBJ_DIR=local
 AWS_REGION=us-east-1
