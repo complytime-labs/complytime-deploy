@@ -43,7 +43,7 @@ spec:
             mountPath: /data
         readinessProbe:
           httpGet:
-            path: /rustfs/health/ready
+            path: /health
             port: 9000
           initialDelaySeconds: 5
           periodSeconds: 10
