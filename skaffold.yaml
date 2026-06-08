@@ -13,6 +13,8 @@ deploy:
       before:
         - host:
             command: ["sh", "-c", "oc new-project complytime-dev 2>/dev/null || oc project complytime-dev"]
+        - host:
+            command: ["sh", "-c", "oc delete job rustfs-create-bucket -n complytime-dev 2>/dev/null || true"]
 
 portForward:
   - resourceType: service
