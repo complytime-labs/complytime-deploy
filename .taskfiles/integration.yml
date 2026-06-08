@@ -204,11 +204,12 @@ tasks:
           exit 1
         fi
         mkdir -p "{{.TEST_DIR}}"
+        CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt"
         VENOM_ARGS=(
           "{{.INTEGRATION_DIR}}/evidence-pipeline.venom.yml"
           --lib-dir "{{.INTEGRATION_DIR}}/lib"
           --output-dir "{{.TEST_DIR}}"
-          --var "ca_cert={{.TEST_DIR}}/service-ca.crt"
+          --var "ca_cert=${CA_CERT}"
         )
         if [ "{{.MODE}}" = "quadlet" ]; then
           # Quadlet certs have SAN DNS:localhost — connect directly
