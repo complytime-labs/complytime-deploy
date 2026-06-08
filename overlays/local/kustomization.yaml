@@ -24,6 +24,7 @@ patches:
   - path: patches/pvcs.yaml
   - path: patches/grafana-datasource.yaml
   - path: patches/grafana-auth.yaml
+  - path: patches/probes.yaml
   - path: patches/collector-env.yaml
 
 configMapGenerator:
