@@ -41,6 +41,7 @@ spec:
           - |
             rc alias set local http://rustfs:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
             rc mb --ignore-existing local/complytime-evidence
+            rc anonymous set public local/complytime-evidence
         env:
           - name: AWS_ACCESS_KEY_ID
             value: rustfsadmin
