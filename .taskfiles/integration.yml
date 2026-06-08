@@ -147,11 +147,27 @@ tasks:
             echo "OK: port $LOCAL_PORT already reachable"
             continue
           fi
-          oc port-forward "$SVC" "$PORTS" -n "{{.NAMESPACE}}" &>/dev/null &
+          nohup oc port-forward "$SVC" "$PORTS" -n "{{.NAMESPACE}}" \
+            >> "{{.TEST_DIR}}/port-forward.log" 2>&1 &
           echo "  Forwarding $SVC $PORTS (pid $!)"
         done
-        sleep 2
-        echo "OK: port-forwards started (kill with: task integration:port-forward-stop)"
+
+        # Wait for collector webhook to become reachable
+        echo "  Waiting for port-forwards to establish..."
+        for i in $(seq 1 15); do
+          if curl -sf -k https://localhost:8088/eventreceiver/healthcheck >/dev/null 2>&1; then
+            echo "OK: port-forwards ready"
+            echo "  Log: {{.TEST_DIR}}/port-forward.log"
+            echo "  Stop: task integration:port-forward-stop"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "ERROR: port-forwards did not become ready after 30s"
+        echo "  Check log: {{.TEST_DIR}}/port-forward.log"
+        echo "  Verify pods are running: oc get pods -n {{.NAMESPACE}}"
+        cat "{{.TEST_DIR}}/port-forward.log" 2>/dev/null || true
+        exit 1
 
   port-forward-stop:
     desc: Stop all oc port-forward processes for the test namespace
