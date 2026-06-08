@@ -73,6 +73,8 @@ tasks:
 
   extract-ca:
     desc: Extract CA certificate for TLS verification
+    status:
+      - test -f "{{.TEST_DIR}}/service-ca.crt"
     cmds:
       - |
         mkdir -p "{{.TEST_DIR}}"
@@ -117,9 +119,10 @@ tasks:
         fi
 
   test:
-    desc: Run all integration test suites
-    deps: [check-stack]
+    desc: Run all integration test suites (runs setup if needed)
     cmds:
+      - task: setup
+      - task: check-stack
       - task: test-pull
       - task: test-pipeline
 
