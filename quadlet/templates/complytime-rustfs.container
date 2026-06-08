@@ -5,14 +5,14 @@ After=complytime-network.service
 
 [Container]
 ContainerName=complytime-rustfs
-Image=docker.io/rustfs/rustfs:latest
+Image=docker.io/rustfs/rustfs@sha256:d441111efe3af5bbd6e29eba7cd124f96bb7d49a0612390907f9216d5f970382
 Network=complytime.network
 PublishPort=9000:9000
 PublishPort=9001:9001
 Volume=complytime-rustfs-storage.volume:/data
 Exec=server /data --console-address :9001
-Environment=RUSTFS_ROOT_USER=rustfsadmin
-Environment=RUSTFS_ROOT_PASSWORD=rustfsadmin
+Environment=RUSTFS_ACCESS_KEY=rustfsadmin
+Environment=RUSTFS_SECRET_KEY=rustfsadmin
 
 [Service]
 Restart=always
