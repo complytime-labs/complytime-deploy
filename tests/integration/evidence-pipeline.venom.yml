@@ -22,7 +22,7 @@ testcases:
         assertions:
           - result.statuscode ShouldEqual 200
 
-  - name: "pull-request-enforcement: ingest and verify"
+  - name: "POST pull-request-enforcement"
     steps:
       - type: post-evidence
         control_id: "pull-request-enforcement"
@@ -33,21 +33,8 @@ testcases:
         ca_cert: "{{.ca_cert}}"
         assertions:
           - result.status_code ShouldEqual "200"
-      - type: poll-loki
-        value: "pull-request-enforcement"
-        loki_host: "{{.loki_host}}"
-        loki_port: "{{.loki_port}}"
-        ca_cert: "{{.ca_cert}}"
-        assertions:
-          - result.log_line ShouldNotBeEmpty
-      - type: poll-s3
-        s3_port: "{{.s3_port}}"
-        bucket: "{{.s3_bucket}}"
-        prefix: "{{.s3_obj_dir}}/pull-request-enforcement/"
-        assertions:
-          - result.keys ShouldContainSubstring "evidence_"
 
-  - name: "approval-requirements: ingest and verify"
+  - name: "POST approval-requirements"
     steps:
       - type: post-evidence
         control_id: "approval-requirements"
@@ -58,21 +45,8 @@ testcases:
         ca_cert: "{{.ca_cert}}"
         assertions:
           - result.status_code ShouldEqual "200"
-      - type: poll-loki
-        value: "approval-requirements"
-        loki_host: "{{.loki_host}}"
-        loki_port: "{{.loki_port}}"
-        ca_cert: "{{.ca_cert}}"
-        assertions:
-          - result.log_line ShouldNotBeEmpty
-      - type: poll-s3
-        s3_port: "{{.s3_port}}"
-        bucket: "{{.s3_bucket}}"
-        prefix: "{{.s3_obj_dir}}/approval-requirements/"
-        assertions:
-          - result.keys ShouldContainSubstring "evidence_"
 
-  - name: "force-push-restriction: ingest and verify"
+  - name: "POST force-push-restriction"
     steps:
       - type: post-evidence
         control_id: "force-push-restriction"
@@ -83,21 +57,8 @@ testcases:
         ca_cert: "{{.ca_cert}}"
         assertions:
           - result.status_code ShouldEqual "200"
-      - type: poll-loki
-        value: "force-push-restriction"
-        loki_host: "{{.loki_host}}"
-        loki_port: "{{.loki_port}}"
-        ca_cert: "{{.ca_cert}}"
-        assertions:
-          - result.log_line ShouldNotBeEmpty
-      - type: poll-s3
-        s3_port: "{{.s3_port}}"
-        bucket: "{{.s3_bucket}}"
-        prefix: "{{.s3_obj_dir}}/force-push-restriction/"
-        assertions:
-          - result.keys ShouldContainSubstring "evidence_"
 
-  - name: "admin-bypass-prevention: ingest and verify"
+  - name: "POST admin-bypass-prevention"
     steps:
       - type: post-evidence
         control_id: "admin-bypass-prevention"
@@ -108,21 +69,8 @@ testcases:
         ca_cert: "{{.ca_cert}}"
         assertions:
           - result.status_code ShouldEqual "200"
-      - type: poll-loki
-        value: "admin-bypass-prevention"
-        loki_host: "{{.loki_host}}"
-        loki_port: "{{.loki_port}}"
-        ca_cert: "{{.ca_cert}}"
-        assertions:
-          - result.log_line ShouldNotBeEmpty
-      - type: poll-s3
-        s3_port: "{{.s3_port}}"
-        bucket: "{{.s3_bucket}}"
-        prefix: "{{.s3_obj_dir}}/admin-bypass-prevention/"
-        assertions:
-          - result.keys ShouldContainSubstring "evidence_"
 
-  - name: "code-owner-enforcement: ingest and verify"
+  - name: "POST code-owner-enforcement"
     steps:
       - type: post-evidence
         control_id: "code-owner-enforcement"
@@ -133,6 +81,49 @@ testcases:
         ca_cert: "{{.ca_cert}}"
         assertions:
           - result.status_code ShouldEqual "200"
+
+  - name: "poll-loki pull-request-enforcement (60s timeout)"
+    steps:
+      - type: poll-loki
+        value: "pull-request-enforcement"
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki approval-requirements (60s timeout)"
+    steps:
+      - type: poll-loki
+        value: "approval-requirements"
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki force-push-restriction (60s timeout)"
+    steps:
+      - type: poll-loki
+        value: "force-push-restriction"
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki admin-bypass-prevention (60s timeout)"
+    steps:
+      - type: poll-loki
+        value: "admin-bypass-prevention"
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki code-owner-enforcement (60s timeout)"
+    steps:
       - type: poll-loki
         value: "code-owner-enforcement"
         loki_host: "{{.loki_host}}"
@@ -140,6 +131,45 @@ testcases:
         ca_cert: "{{.ca_cert}}"
         assertions:
           - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-s3 pull-request-enforcement (60s timeout)"
+    steps:
+      - type: poll-s3
+        s3_port: "{{.s3_port}}"
+        bucket: "{{.s3_bucket}}"
+        prefix: "{{.s3_obj_dir}}/pull-request-enforcement/"
+        assertions:
+          - result.keys ShouldContainSubstring "evidence_"
+
+  - name: "poll-s3 approval-requirements (60s timeout)"
+    steps:
+      - type: poll-s3
+        s3_port: "{{.s3_port}}"
+        bucket: "{{.s3_bucket}}"
+        prefix: "{{.s3_obj_dir}}/approval-requirements/"
+        assertions:
+          - result.keys ShouldContainSubstring "evidence_"
+
+  - name: "poll-s3 force-push-restriction (60s timeout)"
+    steps:
+      - type: poll-s3
+        s3_port: "{{.s3_port}}"
+        bucket: "{{.s3_bucket}}"
+        prefix: "{{.s3_obj_dir}}/force-push-restriction/"
+        assertions:
+          - result.keys ShouldContainSubstring "evidence_"
+
+  - name: "poll-s3 admin-bypass-prevention (60s timeout)"
+    steps:
+      - type: poll-s3
+        s3_port: "{{.s3_port}}"
+        bucket: "{{.s3_bucket}}"
+        prefix: "{{.s3_obj_dir}}/admin-bypass-prevention/"
+        assertions:
+          - result.keys ShouldContainSubstring "evidence_"
+
+  - name: "poll-s3 code-owner-enforcement (60s timeout)"
+    steps:
       - type: poll-s3
         s3_port: "{{.s3_port}}"
         bucket: "{{.s3_bucket}}"
