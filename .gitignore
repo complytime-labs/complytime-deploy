@@ -1,3 +1,4 @@
 .env
 quadlet/runtime/
 .test-output/
+docs/superpowers/
