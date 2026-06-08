@@ -82,7 +82,7 @@ testcases:
         assertions:
           - result.status_code ShouldEqual "200"
 
-  - name: "poll-loki pull-request-enforcement (60s timeout)"
+  - name: "poll-loki pull-request-enforcement (polling)"
     steps:
       - type: poll-loki
         value: "pull-request-enforcement"
@@ -92,7 +92,7 @@ testcases:
         assertions:
           - result.log_line ShouldNotBeEmpty
 
-  - name: "poll-loki approval-requirements (60s timeout)"
+  - name: "poll-loki approval-requirements (polling)"
     steps:
       - type: poll-loki
         value: "approval-requirements"
@@ -102,7 +102,7 @@ testcases:
         assertions:
           - result.log_line ShouldNotBeEmpty
 
-  - name: "poll-loki force-push-restriction (60s timeout)"
+  - name: "poll-loki force-push-restriction (polling)"
     steps:
       - type: poll-loki
         value: "force-push-restriction"
@@ -112,7 +112,7 @@ testcases:
         assertions:
           - result.log_line ShouldNotBeEmpty
 
-  - name: "poll-loki admin-bypass-prevention (60s timeout)"
+  - name: "poll-loki admin-bypass-prevention (polling)"
     steps:
       - type: poll-loki
         value: "admin-bypass-prevention"
@@ -122,7 +122,7 @@ testcases:
         assertions:
           - result.log_line ShouldNotBeEmpty
 
-  - name: "poll-loki code-owner-enforcement (60s timeout)"
+  - name: "poll-loki code-owner-enforcement (polling)"
     steps:
       - type: poll-loki
         value: "code-owner-enforcement"
@@ -132,7 +132,7 @@ testcases:
         assertions:
           - result.log_line ShouldNotBeEmpty
 
-  - name: "poll-s3 pull-request-enforcement (60s timeout)"
+  - name: "poll-s3 pull-request-enforcement (polling)"
     steps:
       - type: poll-s3
         s3_port: "{{.s3_port}}"
@@ -141,7 +141,7 @@ testcases:
         assertions:
           - result.keys ShouldContainSubstring "evidence_"
 
-  - name: "poll-s3 approval-requirements (60s timeout)"
+  - name: "poll-s3 approval-requirements (polling)"
     steps:
       - type: poll-s3
         s3_port: "{{.s3_port}}"
@@ -150,7 +150,7 @@ testcases:
         assertions:
           - result.keys ShouldContainSubstring "evidence_"
 
-  - name: "poll-s3 force-push-restriction (60s timeout)"
+  - name: "poll-s3 force-push-restriction (polling)"
     steps:
       - type: poll-s3
         s3_port: "{{.s3_port}}"
@@ -159,7 +159,7 @@ testcases:
         assertions:
           - result.keys ShouldContainSubstring "evidence_"
 
-  - name: "poll-s3 admin-bypass-prevention (60s timeout)"
+  - name: "poll-s3 admin-bypass-prevention (polling)"
     steps:
       - type: poll-s3
         s3_port: "{{.s3_port}}"
@@ -168,7 +168,7 @@ testcases:
         assertions:
           - result.keys ShouldContainSubstring "evidence_"
 
-  - name: "poll-s3 code-owner-enforcement (60s timeout)"
+  - name: "poll-s3 code-owner-enforcement (polling)"
     steps:
       - type: poll-s3
         s3_port: "{{.s3_port}}"

@@ -3,7 +3,7 @@ input:
   s3_port: "9000"
   bucket: ""
   prefix: ""
-  timeout: "60"
+  timeout: "30"
   interval: "3"
 
 steps:

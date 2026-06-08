@@ -5,7 +5,7 @@ input:
   loki_host: ""
   loki_port: "3100"
   ca_cert: ""
-  timeout: "60"
+  timeout: "30"
   interval: "3"
 
 steps:
