@@ -1,0 +1,39 @@
+executor: poll-loki
+input:
+  query: ""
+  loki_host: ""
+  loki_port: "3100"
+  ca_cert: ""
+  timeout: "30"
+  interval: "3"
+
+steps:
+  - type: exec
+    script: |
+      DEADLINE=$(($(date +%s) + {{.input.timeout}}))
+      while [ $(date +%s) -lt $DEADLINE ]; do
+        NOW=$(date +%s)
+        START=$(($NOW - 300))
+        RESPONSE=$(curl -sf \
+          --cacert "{{.input.ca_cert}}" \
+          --resolve "{{.input.loki_host}}:{{.input.loki_port}}:127.0.0.1" \
+          "https://{{.input.loki_host}}:{{.input.loki_port}}/loki/api/v1/query_range?query={{.input.query}}&start=${START}&end=${NOW}&limit=5" \
+          2>/dev/null) || true
+        if [ -n "$RESPONSE" ]; then
+          COUNT=$(echo "$RESPONSE" | jq -r '.data.result | length' 2>/dev/null) || COUNT=0
+          if [ "$COUNT" -gt 0 ]; then
+            echo "FOUND: $COUNT result stream(s) for query {{.input.query}}"
+            echo "$RESPONSE" | jq -r '.data.result[0].values[0][1]' 2>/dev/null | head -1
+            exit 0
+          fi
+        fi
+        sleep {{.input.interval}}
+      done
+      echo "TIMEOUT: no results for query {{.input.query}} after {{.input.timeout}}s"
+      exit 1
+    assertions:
+      - result.code ShouldEqual 0
+      - result.systemout ShouldContainSubstring "FOUND"
+
+output:
+  log_line: "{{.result.systemout}}"

@@ -1,0 +1,38 @@
+executor: poll-s3
+input:
+  rustfs_host: ""
+  s3_port: "9000"
+  bucket: ""
+  prefix: ""
+  ca_cert: ""
+  timeout: "30"
+  interval: "3"
+
+steps:
+  - type: exec
+    script: |
+      DEADLINE=$(($(date +%s) + {{.input.timeout}}))
+      while [ $(date +%s) -lt $DEADLINE ]; do
+        RESPONSE=$(curl -sf \
+          --cacert "{{.input.ca_cert}}" \
+          --resolve "{{.input.rustfs_host}}:{{.input.s3_port}}:127.0.0.1" \
+          "https://{{.input.rustfs_host}}:{{.input.s3_port}}/{{.input.bucket}}?list-type=2&prefix={{.input.prefix}}" \
+          2>/dev/null) || true
+        if [ -n "$RESPONSE" ]; then
+          if echo "$RESPONSE" | grep -q "evidence_"; then
+            KEYS=$(echo "$RESPONSE" | grep -o '<Key>[^<]*</Key>' | sed 's/<[^>]*>//g')
+            echo "FOUND: evidence objects under prefix {{.input.prefix}}"
+            echo "$KEYS"
+            exit 0
+          fi
+        fi
+        sleep {{.input.interval}}
+      done
+      echo "TIMEOUT: no evidence objects under prefix {{.input.prefix}} after {{.input.timeout}}s"
+      exit 1
+    assertions:
+      - result.code ShouldEqual 0
+      - result.systemout ShouldContainSubstring "FOUND"
+
+output:
+  keys: "{{.result.systemout}}"

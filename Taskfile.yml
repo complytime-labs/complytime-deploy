@@ -9,6 +9,8 @@ includes:
     taskfile: .taskfiles/crc.yml
   quadlet:
     taskfile: .taskfiles/quadlet.yml
+  integration:
+    taskfile: .taskfiles/integration.yml
 
 vars:
   TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'

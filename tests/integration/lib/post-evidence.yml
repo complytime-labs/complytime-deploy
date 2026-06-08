@@ -1,0 +1,65 @@
+executor: post-evidence
+input:
+  control_id: ""
+  requirement_id: ""
+  catalog_id: "repo-branch-protection"
+  collector_host: ""
+  webhook_port: "8088"
+  ca_cert: ""
+
+steps:
+  - type: exec
+    script: |
+      TIMESTAMP=$(date +%s)000
+      cat <<PAYLOAD
+      {
+        "activity_id": 0,
+        "activity_name": "",
+        "category_name": "Application Activity",
+        "category_uid": 6,
+        "class_name": "Scan Activity",
+        "class_uid": 6007,
+        "metadata": {
+          "log_provider": "ampel",
+          "product": {"name": "ampel", "vendor_name": "ampel", "version": "v0.1.0"},
+          "uid": "ampel-{{.input.catalog_id}}-{{.input.control_id}}",
+          "version": "v0.1.0"
+        },
+        "status": "success",
+        "status_id": 1,
+        "severity": "unknown",
+        "severity_id": 0,
+        "policy": {
+          "data": "{\"name\":\"AMPEL Policy\",\"description\":\"Policy from ampel-branch-protection bundle\",\"sources\":[{\"name\":\"{{.input.requirement_id}}\",\"config\":{\"include\":[\"{{.input.control_id}}\"]}}]}",
+          "desc": "Assessment for {{.input.control_id}}",
+          "name": "AMPEL Policy",
+          "uid": "{{.input.control_id}}"
+        },
+        "action": "observed",
+        "action_id": 3,
+        "scan": {"type_id": 0},
+        "time": ${TIMESTAMP},
+        "type_name": "",
+        "type_uid": 60070
+      }
+      PAYLOAD
+    assertions:
+      - result.code ShouldEqual 0
+    vars:
+      payload:
+        from: result.systemout
+
+  - type: http
+    url: "https://{{.input.collector_host}}:{{.input.webhook_port}}/eventsource/receiver"
+    method: POST
+    headers:
+      Content-Type: application/json
+    body: "{{.payload}}"
+    tls_root_ca: "{{.input.ca_cert}}"
+    resolve:
+      - "{{.input.collector_host}}:{{.input.webhook_port}}:127.0.0.1"
+    assertions:
+      - result.statuscode ShouldEqual 200
+
+output:
+  status_code: "{{.result.statuscode}}"

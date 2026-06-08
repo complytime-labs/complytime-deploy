@@ -1,0 +1,153 @@
+version: '3'
+
+vars:
+  COMPLYCTL_VERSION: "v1.0.0-alpha.0"
+  COMPLYCTL_SHA: "cf06218076fcec809065e615abd29582527915d569691493fe0e95a03c9302b7"
+  VENOM_VERSION: "v1.3.0"
+  TOOLS_DIR: '{{.HOME}}/.local/bin'
+  TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'
+  NAMESPACE: "complytime-dev"
+  INTEGRATION_DIR: "tests/integration"
+
+tasks:
+  default:
+    silent: true
+    desc: List integration test tasks
+    cmds:
+      - task --list integration
+
+  setup:
+    desc: Install tools, extract service CA, pull OCI bundle
+    cmds:
+      - task: install-tools
+      - task: extract-ca
+      - task: pull-bundle
+
+  install-tools:
+    desc: Install complyctl and venom
+    cmds:
+      - |
+        # Check prerequisites
+        for cmd in jq yq curl oc; do
+          if ! command -v "$cmd" &>/dev/null; then
+            echo "ERROR: $cmd not found"
+            exit 1
+          fi
+        done
+        echo "OK: prerequisites available"
+      - |
+        # Install complyctl
+        if command -v complyctl &>/dev/null && complyctl version 2>&1 | grep -q "{{.COMPLYCTL_VERSION}}"; then
+          echo "OK: complyctl {{.COMPLYCTL_VERSION}} already installed"
+        else
+          echo "Installing complyctl {{.COMPLYCTL_VERSION}}..."
+          mkdir -p "{{.TOOLS_DIR}}"
+          curl -fL -o /tmp/complyctl.tar.gz \
+            "https://github.com/complytime/complyctl/releases/download/{{.COMPLYCTL_VERSION}}/complyctl_linux_x86_64.tar.gz"
+          echo "{{.COMPLYCTL_SHA}}  /tmp/complyctl.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/complyctl.tar.gz -C /tmp
+          install /tmp/complyctl "{{.TOOLS_DIR}}/complyctl"
+          rm -f /tmp/complyctl.tar.gz /tmp/complyctl
+          complyctl version
+        fi
+      - |
+        # Install venom
+        if command -v venom &>/dev/null && venom version 2>&1 | grep -q "{{.VENOM_VERSION}}"; then
+          echo "OK: venom {{.VENOM_VERSION}} already installed"
+        else
+          echo "Installing venom {{.VENOM_VERSION}}..."
+          mkdir -p "{{.TOOLS_DIR}}"
+          curl -fL -o "{{.TOOLS_DIR}}/venom" \
+            "https://github.com/ovh/venom/releases/download/{{.VENOM_VERSION}}/venom.linux-amd64"
+          chmod +x "{{.TOOLS_DIR}}/venom"
+          venom version
+        fi
+
+  extract-ca:
+    desc: Extract OpenShift service CA certificate
+    cmds:
+      - |
+        mkdir -p "{{.TEST_DIR}}"
+        echo "Extracting service CA from namespace {{.NAMESPACE}}..."
+        # Poll for CA bundle (may take a few seconds after deploy)
+        for i in $(seq 1 12); do
+          CA=$(oc get configmap service-ca-bundle -n "{{.NAMESPACE}}" \
+            -o jsonpath='{.data.service-ca\.crt}' 2>/dev/null) || true
+          if [ -n "$CA" ]; then
+            echo "$CA" > "{{.TEST_DIR}}/service-ca.crt"
+            echo "OK: service CA extracted to {{.TEST_DIR}}/service-ca.crt"
+            exit 0
+          fi
+          echo "  Waiting for service CA bundle... ($i/12)"
+          sleep 5
+        done
+        echo "ERROR: service CA bundle not available after 60s"
+        echo "  Ensure the stack is deployed: task sk:run"
+        exit 1
+
+  pull-bundle:
+    desc: Pull OCI policy bundle via complyctl
+    dir: "{{.INTEGRATION_DIR}}"
+    cmds:
+      - |
+        echo "Pulling OCI policy bundle..."
+        if complyctl get 2>&1; then
+          echo "OK: bundle pulled"
+        else
+          echo "WARNING: complyctl get failed (Quay.io may be unreachable)"
+          echo "  Pull tests will be skipped"
+        fi
+
+  test:
+    desc: Run all integration test suites
+    deps: [check-stack]
+    cmds:
+      - task: test-pull
+      - task: test-pipeline
+
+  test-pull:
+    desc: Run complyctl pull test suite
+    cmds:
+      - |
+        mkdir -p "{{.TEST_DIR}}"
+        venom run "{{.INTEGRATION_DIR}}/complyctl-pull.venom.yml" \
+          --lib-dir "{{.INTEGRATION_DIR}}/lib" \
+          --output-dir "{{.TEST_DIR}}" \
+          --var "HOME={{.HOME}}" \
+          -v
+
+  test-pipeline:
+    desc: Run evidence pipeline test suite
+    cmds:
+      - |
+        if [ ! -f "{{.TEST_DIR}}/service-ca.crt" ]; then
+          echo "ERROR: service CA cert not found at {{.TEST_DIR}}/service-ca.crt"
+          echo "  Run: task integration:setup"
+          exit 1
+        fi
+        mkdir -p "{{.TEST_DIR}}"
+        venom run "{{.INTEGRATION_DIR}}/evidence-pipeline.venom.yml" \
+          --lib-dir "{{.INTEGRATION_DIR}}/lib" \
+          --output-dir "{{.TEST_DIR}}" \
+          --var "ca_cert={{.TEST_DIR}}/service-ca.crt" \
+          -v
+
+  check-stack:
+    desc: Verify the CRC stack is reachable
+    internal: true
+    cmds:
+      - |
+        if curl -sf -k https://localhost:8088/eventreceiver/healthcheck >/dev/null 2>&1; then
+          echo "OK: collector webhook reachable"
+        else
+          echo "ERROR: collector webhook not reachable at https://localhost:8088"
+          echo "  Ensure the stack is running: task sk:run"
+          exit 1
+        fi
+
+  clean:
+    desc: Remove test artifacts and pulled bundles
+    cmds:
+      - rm -rf "{{.TEST_DIR}}"
+      - rm -rf "{{.HOME}}/.complytime/policies"
+      - echo "OK: test artifacts cleaned"

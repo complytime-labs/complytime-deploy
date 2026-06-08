@@ -1,0 +1,51 @@
+name: complyctl OCI bundle pull
+vars:
+  policy_store: "{{.HOME}}/.complytime/policies/complytime/policies-ampel-branch-protection"
+
+testcases:
+  - name: complyctl get pulls OCI bundle
+    steps:
+      - type: exec
+        script: |
+          cd {{.venom.testsuite.workdir}}
+          complyctl get 2>&1
+        assertions:
+          - result.code ShouldEqual 0
+      - type: exec
+        script: |
+          test -f "{{.policy_store}}/oci-layout"
+        assertions:
+          - result.code ShouldEqual 0
+
+  - name: OCI bundle contains expected controls
+    steps:
+      - type: exec
+        script: |
+          STORE="{{.policy_store}}"
+          MANIFEST_DIGEST=$(jq -r '.manifests[0].digest' "$STORE/index.json" | sed 's/sha256://')
+          CATALOG_DIGEST=$(jq -r '.layers[] | select(.annotations["org.gemara.artifact.role"] == "import") | .digest' \
+            "$STORE/blobs/sha256/$MANIFEST_DIGEST" | head -1 | sed 's/sha256://')
+          CONTROLS=$(yq -r '.controls[].id' "$STORE/blobs/sha256/$CATALOG_DIGEST" | sort)
+          EXPECTED=$(printf '%s\n' \
+            admin-bypass-prevention \
+            approval-requirements \
+            code-owner-enforcement \
+            force-push-restriction \
+            pull-request-enforcement)
+          if [ "$CONTROLS" = "$EXPECTED" ]; then
+            echo "PASS: found 5 expected controls"
+            echo "$CONTROLS"
+          else
+            echo "FAIL: unexpected controls"
+            echo "got: $CONTROLS"
+            echo "expected: $EXPECTED"
+            exit 1
+          fi
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "PASS: found 5 expected controls"
+          - result.systemout ShouldContainSubstring "pull-request-enforcement"
+          - result.systemout ShouldContainSubstring "approval-requirements"
+          - result.systemout ShouldContainSubstring "force-push-restriction"
+          - result.systemout ShouldContainSubstring "admin-bypass-prevention"
+          - result.systemout ShouldContainSubstring "code-owner-enforcement"
