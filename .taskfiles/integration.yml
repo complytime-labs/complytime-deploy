@@ -103,7 +103,16 @@ tasks:
   extract-ca:
     desc: Extract CA certificate for TLS verification
     status:
-      - test -f "{{.TEST_DIR}}/service-ca.crt"
+      - |
+        # Re-extract when switching between CRC and quadlet — the CA differs.
+        [ -f "{{.TEST_DIR}}/service-ca.crt" ] || exit 1
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          openssl x509 -in "{{.TEST_DIR}}/service-ca.crt" -noout -subject 2>/dev/null \
+            | grep -q "ComplyTime Local CA"
+        else
+          openssl x509 -in "{{.TEST_DIR}}/service-ca.crt" -noout -subject 2>/dev/null \
+            | grep -q "openshift-service-serving-signer"
+        fi
     cmds:
       - |
         mkdir -p "{{.TEST_DIR}}"
