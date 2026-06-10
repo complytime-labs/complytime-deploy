@@ -53,12 +53,14 @@ The system consists of:
 
 | Tool | Purpose | Install |
 |------|---------|---------|
-| `oc` | OpenShift CLI | [Download](https://developers.redhat.com/products/openshift-local) or `crc oc-env` |
+| `crc` | OpenShift Local cluster | [Download](https://developers.redhat.com/products/openshift-local) (free Red Hat account) — see [Installing OpenShift Local](#installing-openshift-local) |
+| `oc` | OpenShift CLI | Bundled with `crc` — run `eval $(crc oc-env)` to add to PATH |
 | `task` | Task runner | [taskfile.dev/installation](https://taskfile.dev/installation/) |
 | `skaffold` | Deploy lifecycle manager | [skaffold.dev/docs/install](https://skaffold.dev/docs/install/) |
 | `kustomize` | Manifest renderer (used by Skaffold) | [kubectl.docs.kubernetes.io](https://kubectl.docs.kubernetes.io/installation/kustomize/) |
 | `kubectl` | Kubernetes CLI (symlink `oc` if not installed) | `ln -sf $(which oc) /usr/local/bin/kubectl` |
 | `kubeseal` | Encrypt secrets for git (stage/production) | [SealedSecrets releases](https://github.com/bitnami-labs/sealed-secrets/releases) |
+| `podman` | Local deployment (Quadlet) | [podman.io/docs/installation](https://podman.io/docs/installation) — requires >= 4.4 |
 
 ### OpenShift Cluster Requirements
 
@@ -466,8 +468,7 @@ This only affects the local overlay — stage and production continue pulling fr
 │   ├── service-ca-bundle/  # OpenShift Service CA for internal TLS
 │   ├── collector/          # OTel pipeline
 │   │   ├── deployment.yaml, service.yaml, serviceaccount.yaml
-│   │   ├── configmap.yaml  # References otel-collector.yaml
-│   │   └── otel-collector.yaml  # Production OTel config (OIDC/JWT)
+│   │   └── otel-collector.yaml  # OTel config (kustomize generates ConfigMap)
 │   ├── loki/               # Log storage
 │   │   ├── deployment.yaml, service.yaml, pvc.yaml
 │   │   └── local-config.yaml  # Loki server config
