@@ -460,7 +460,7 @@ This only affects the local overlay — stage and production continue pulling fr
 
 ```
 .
-├── Taskfile.yaml           # Task runner — run 'task' for commands
+├── Taskfile.yml            # Task runner — run 'task' for commands
 ├── base/                   # Kustomize base manifests (production-accurate)
 │   ├── kustomization.yaml  # Aggregates all components
 │   ├── service-ca-bundle/  # OpenShift Service CA for internal TLS
