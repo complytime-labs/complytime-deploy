@@ -120,6 +120,9 @@ PROTOCOL=$( [ "$TLS_ENABLED" = true ] && echo "https" || echo "http" )
 
 # Collector — local config with ${env:*} substitution for hosts
 cp "$LOCAL_CONFIGS/collector-local.yaml" "$RUNTIME_DIR/configs/collector-config.yaml"
+# CRC mounts the service CA at /etc/ssl/certs/service-ca.crt via configmap;
+# quadlet mounts it at /etc/tls/ca.crt alongside the server cert.
+sed -i 's|/etc/ssl/certs/service-ca.crt|/etc/tls/ca.crt|g' "$RUNTIME_DIR/configs/collector-config.yaml"
 if [ "$TLS_ENABLED" = false ]; then
   # Strip TLS blocks for no-TLS mode
   sed -i '/tls:/,/insecure_skip_verify:/d' "$RUNTIME_DIR/configs/collector-config.yaml"
