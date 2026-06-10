@@ -147,7 +147,7 @@ tasks:
         fi
         # complyctl writes a .complytime/ log dir in cwd — move it to .test-output/
         if [ -d .complytime ]; then
-          mkdir -p "../../{{.TEST_DIR}}"
+          rm -rf "../../{{.TEST_DIR}}/.complytime"
           mv .complytime "../../{{.TEST_DIR}}/"
         fi
 
