@@ -145,6 +145,11 @@ tasks:
           echo "WARNING: complyctl get failed (Quay.io may be unreachable)"
           echo "  Pull tests will be skipped"
         fi
+        # complyctl writes a .complytime/ log dir in cwd — move it to .test-output/
+        if [ -d .complytime ]; then
+          mkdir -p "../../{{.TEST_DIR}}"
+          mv .complytime "../../{{.TEST_DIR}}/"
+        fi
 
   test:
     desc: Run all integration test suites (runs setup if needed)

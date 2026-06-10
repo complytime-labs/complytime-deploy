@@ -2,3 +2,5 @@
 quadlet/runtime/
 .test-output/
 docs/superpowers/
+# complyctl writes log/state here when run from tests/integration/
+tests/integration/.complytime/
