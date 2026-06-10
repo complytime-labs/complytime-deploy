@@ -107,7 +107,7 @@ The Collector config uses OTel `${env:VAR}` substitution. These environment vari
 
 OpenShift Local (CRC) runs a single-node OpenShift cluster on your laptop.
 
-**System requirements:** 9 GB RAM (16 GB recommended), 31 GB disk, 4 CPU cores
+**System requirements:** 9 GB RAM (16 GB recommended), 60 GB disk (SSD required), 4 CPU cores
 
 1. **Download** from https://developers.redhat.com/products/openshift-local (free Red Hat Developer account required). Save your pull secret.
 

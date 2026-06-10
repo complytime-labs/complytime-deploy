@@ -2,18 +2,24 @@ executor: poll-loki
 input:
   label: "policy_rule_id"
   value: ""
+  query: ""
   loki_host: ""
   loki_port: "3100"
   ca_cert: ""
-  timeout: "30"
+  timeout: "60"
   interval: "3"
 
 steps:
   - type: exec
     script: |
-      LABEL="{{.input.label}}"
-      VALUE="{{.input.value}}"
-      QUERY="{${LABEL}=\"${VALUE}\"}"
+      CUSTOM_QUERY='{{.input.query}}'
+      if [ -n "$CUSTOM_QUERY" ]; then
+        QUERY="$CUSTOM_QUERY"
+      else
+        LABEL="{{.input.label}}"
+        VALUE="{{.input.value}}"
+        QUERY="{${LABEL}=\"${VALUE}\"}"
+      fi
       DEADLINE=$(($(date +%s) + {{.input.timeout}}))
       ATTEMPT=0
       echo "POLL: query=${QUERY} timeout={{.input.timeout}}s interval={{.input.interval}}s" >&2
@@ -57,9 +63,12 @@ steps:
       fi
       rm -f /tmp/loki_response.json /tmp/loki_err.txt
       exit 1
+    vars:
+      log_line:
+        from: result.systemout
     assertions:
       - result.code ShouldEqual 0
       - result.systemout ShouldContainSubstring "FOUND"
 
 output:
-  log_line: "{{.result.systemout}}"
+  log_line: "{{.log_line}}"

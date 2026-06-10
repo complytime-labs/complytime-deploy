@@ -39,27 +39,25 @@ limits_config:
   retention_period: 30d   # Keep logs for 30 days
   otlp_config:
     resource_attributes:
+      # Ignore default resource attributes (cloud.*, k8s.*, service.instance.id, etc.)
+      # to prevent high-cardinality labels. Only index our explicit list.
+      ignore_defaults: true
       attributes_config:
         - action: index_label
           attributes:
-            - compliance.control
-            - compliance.benchmark
-            # Index log attributes for efficient querying
-            - compliance.control.id
-            - compliance.control.catalog.id
-            - compliance.control.category
-            - compliance.status
+            - service.name
             - policy.rule.id
             - policy.engine.name
             - policy.evaluation.result
-            # Also index with underscores (Loki may convert dots to underscores)
-            - compliance_control_id
-            - compliance_control_catalog_id
-            - compliance_control_category
-            - compliance_status
-            - policy_rule_id
-            - policy_engine_name
-            - policy_evaluation_result
+    # Log attributes: only promote specific attributes to structured metadata.
+    # Without this, Loki may promote all log attributes to labels, causing
+    # high cardinality (e.g., observed_timestamp becomes a unique label per entry).
+    log_attributes:
+      - action: structured_metadata
+        attributes:
+          - policy.control.id
+          - policy.config.include
+          - severity
 
 schema_config:
   configs:

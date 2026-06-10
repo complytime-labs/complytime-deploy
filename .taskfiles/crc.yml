@@ -3,6 +3,7 @@ version: '3'
 vars:
   CRC_CPUS: '{{.CRC_CPUS | default "6"}}'
   CRC_MEMORY: '{{.CRC_MEMORY | default "16384"}}'
+  CRC_DISK: '{{.CRC_DISK | default "60"}}'
 
 tasks:
   default:
@@ -22,8 +23,9 @@ tasks:
       - crc setup
       - crc config set cpus {{.CRC_CPUS}}
       - crc config set memory {{.CRC_MEMORY}}
+      - crc config set disk-size {{.CRC_DISK}}
       - echo ''
-      - echo "CRC configured with {{.CRC_CPUS}} CPUs and {{.CRC_MEMORY}} MiB RAM."
+      - echo "CRC configured with {{.CRC_CPUS}} CPUs, {{.CRC_MEMORY}} MiB RAM, and {{.CRC_DISK}}G Disk."
       - 'echo "Next: task crc:start"'
 
   start:

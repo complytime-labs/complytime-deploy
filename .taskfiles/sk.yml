@@ -17,11 +17,18 @@ tasks:
     cmds:
       - skaffold dev
 
+  _deploy:
+    internal: true
+    cmds:
+      - skaffold run {{if .CLI_ARGS}}-p {{.CLI_ARGS}}{{end}}
+      - oc wait --for=condition=ready pod -l app=collector -n {{.NAMESPACE | default "complytime-dev"}} --timeout=120s
+      - oc wait --for=condition=ready pod -l app=loki -n {{.NAMESPACE | default "complytime-dev"}} --timeout=120s
+
   run:
     desc: "One-shot deploy (usage: task sk:run, or task sk:run -- stage)"
     prompt: "This will deploy to {{.OC_SERVER}} (project: {{.OC_PROJECT}}). Continue?"
     cmds:
-      - skaffold run {{if .CLI_ARGS}}-p {{.CLI_ARGS}}{{end}}
+      - task: _deploy
 
   render:
     desc: "Render manifests to stdout (usage: task sk:render, or task sk:render -- stage)"
@@ -49,7 +56,16 @@ tasks:
       - oc get pods
 
   delete:
-    desc: "Delete deployed resources — DESTRUCTIVE (usage: task sk:delete, or task sk:delete -- stage)"
-    prompt: "This will DELETE resources on {{.OC_SERVER}} (project: {{.OC_PROJECT}}). Continue?"
+    desc: "Delete deployed resources and PVCs — DESTRUCTIVE (usage: task sk:delete, or task sk:delete -- stage)"
+    prompt: "This will DELETE resources and persistent volumes on {{.OC_SERVER}} (project: {{.OC_PROJECT}}). Continue?"
     cmds:
       - skaffold delete {{if .CLI_ARGS}}-p {{.CLI_ARGS}}{{end}}
+      - |
+        PVCS=$(oc get pvc -o name 2>/dev/null)
+        if [ -n "$PVCS" ]; then
+          echo "Deleting PVCs to reclaim disk..."
+          oc delete pvc --all --wait=false
+          echo "PVCs deleted"
+        else
+          echo "No PVCs to clean up"
+        fi

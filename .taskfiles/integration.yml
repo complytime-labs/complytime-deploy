@@ -20,14 +20,34 @@ tasks:
       - task --list integration
 
   setup:
-    desc: Install tools, extract CA, start port-forwards, pull OCI bundle
+    desc: Install tools, deploy stack if needed, extract CA, start port-forwards, pull OCI bundle
     cmds:
       - task: check-prereqs
       - task: install-complyctl
       - task: install-venom
+      - task: deploy-if-needed
       - task: extract-ca
       - task: port-forward
       - task: pull-bundle
+
+  deploy-if-needed:
+    desc: Deploy the stack if no pods are running in the test namespace
+    internal: true
+    status:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          systemctl --user is-active complytime-collector.service &>/dev/null
+        else
+          oc get pods -n "{{.NAMESPACE}}" 2>/dev/null | grep -q Running
+        fi
+    cmds:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          echo "Quadlet stack not running — start it with: task quadlet:start"
+          exit 1
+        fi
+        echo "Stack not deployed — deploying..."
+      - task: :sk:_deploy
 
   check-prereqs:
     desc: Verify required CLI tools are available
@@ -142,6 +162,28 @@ tasks:
           echo "Quadlet publishes ports directly — port-forward not needed"
           exit 0
         fi
+
+        # Detect non-oc processes holding ports we need to forward.
+        # Podman rootless networking (rootlessport, pasta) binds 0.0.0.0:<port>
+        # and silently shadows oc port-forward, routing traffic to the wrong backend.
+        CONFLICT=0
+        for FWD in "svc/collector 8088:8088" "svc/collector 4318:4318" "svc/collector 4317:4317" \
+                   "svc/loki 3100:3100" "svc/rustfs 9000:9000" "svc/grafana 3000:3000"; do
+          LOCAL_PORT=$(echo "$FWD" | cut -d' ' -f2 | cut -d: -f1)
+          HOLDER=$(ss -tlnp "sport = :${LOCAL_PORT}" 2>/dev/null \
+            | awk '/LISTEN/{print $NF}' | grep -oP 'users:\(\("\K[^"]+' | head -1)
+          if [ -n "$HOLDER" ] && [ "$HOLDER" != "oc" ]; then
+            echo "ERROR: port $LOCAL_PORT is held by '$HOLDER' (not oc port-forward)"
+            CONFLICT=1
+          fi
+        done
+        if [ "$CONFLICT" -eq 1 ]; then
+          echo ""
+          echo "  Quadlet/Podman containers conflict with CRC port-forwards."
+          echo "  Stop them first:  task quadlet:teardown"
+          exit 1
+        fi
+
         # Kill any stale port-forwards from a previous run
         pkill -f "oc port-forward.*-n {{.NAMESPACE}}" 2>/dev/null || true
         sleep 1
@@ -152,10 +194,9 @@ tasks:
           SVC=$(echo "$FWD" | cut -d' ' -f1)
           PORTS=$(echo "$FWD" | cut -d' ' -f2)
           LOCAL_PORT=$(echo "$PORTS" | cut -d: -f1)
-          # Check if port is already forwarded
-          if curl -sf -k "https://localhost:${LOCAL_PORT}" >/dev/null 2>&1 || \
-             curl -sf "http://localhost:${LOCAL_PORT}" >/dev/null 2>&1; then
-            echo "OK: port $LOCAL_PORT already reachable"
+          # Check if port is already forwarded by a previous oc port-forward
+          if pgrep -f "oc port-forward.*${LOCAL_PORT}:.*-n {{.NAMESPACE}}" >/dev/null 2>&1; then
+            echo "OK: port $LOCAL_PORT already forwarded"
             continue
           fi
           nohup oc port-forward "$SVC" "$PORTS" -n "{{.NAMESPACE}}" \

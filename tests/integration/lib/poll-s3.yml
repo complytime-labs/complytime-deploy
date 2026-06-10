@@ -3,20 +3,22 @@ input:
   s3_port: "9000"
   bucket: ""
   prefix: ""
-  timeout: "30"
+  timeout: "60"
   interval: "3"
 
 steps:
   - type: exec
     script: |
+      HOST="127.0.0.1:{{.input.s3_port}}"
       DEADLINE=$(($(date +%s) + {{.input.timeout}}))
       ATTEMPT=0
+      QUERY_STRING="list-type=2&prefix={{.input.prefix}}"
       echo "POLL: bucket={{.input.bucket}} prefix={{.input.prefix}} timeout={{.input.timeout}}s" >&2
       while [ $(date +%s) -lt $DEADLINE ]; do
         ATTEMPT=$((ATTEMPT + 1))
         REMAINING=$((DEADLINE - $(date +%s)))
         HTTP_CODE=$(curl -s -o /tmp/s3_response.xml -w '%{http_code}' \
-          "http://127.0.0.1:{{.input.s3_port}}/{{.input.bucket}}?list-type=2&prefix={{.input.prefix}}" \
+          "http://${HOST}/{{.input.bucket}}?${QUERY_STRING}" \
           2>/tmp/s3_err.txt) || HTTP_CODE="000"
         if [ "$HTTP_CODE" = "200" ]; then
           if grep -q "evidence_" /tmp/s3_response.xml 2>/dev/null; then
@@ -45,9 +47,12 @@ steps:
       fi
       rm -f /tmp/s3_response.xml /tmp/s3_err.txt
       exit 1
+    vars:
+      keys:
+        from: result.systemout
     assertions:
       - result.code ShouldEqual 0
       - result.systemout ShouldContainSubstring "FOUND"
 
 output:
-  keys: "{{.result.systemout}}"
+  keys: "{{.keys}}"

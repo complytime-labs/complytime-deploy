@@ -24,6 +24,10 @@ spec:
               sleep 2
             done
         env:
+          # rc writes alias config to $HOME; OpenShift assigns a random UID
+          # whose default home is read-only, causing "Permission denied (os error 13)".
+          - name: HOME
+            value: /tmp
           - name: AWS_ACCESS_KEY_ID
             value: rustfsadmin
           - name: AWS_SECRET_ACCESS_KEY
@@ -43,6 +47,9 @@ spec:
             rc mb --ignore-existing local/complytime-evidence
             rc anonymous set public local/complytime-evidence
         env:
+          # Same HOME override as init container — rc needs a writable config dir.
+          - name: HOME
+            value: /tmp
           - name: AWS_ACCESS_KEY_ID
             value: rustfsadmin
           - name: AWS_SECRET_ACCESS_KEY

@@ -55,8 +55,11 @@ processors:
           - set(attributes["policy.evaluation.result"], "Unknown") where ParseJSON(body)["status"] != nil and attributes["policy.evaluation.result"] == nil
           # Extract severity from OCSF evidence
           - set(attributes["severity"], ParseJSON(body)["severity"]) where ParseJSON(body)["severity"] != nil
-          # Set policy.rule.id as resource attribute for S3 partitioning
+          # Promote key attributes to resource level for Loki label indexing and S3 partitioning.
+          # Loki can only index resource attributes as labels (not log attributes).
           - set(resource.attributes["policy.rule.id"], attributes["policy.rule.id"]) where attributes["policy.rule.id"] != nil
+          - set(resource.attributes["policy.engine.name"], attributes["policy.engine.name"]) where attributes["policy.engine.name"] != nil
+          - set(resource.attributes["policy.evaluation.result"], attributes["policy.evaluation.result"]) where attributes["policy.evaluation.result"] != nil
 
 connectors:
   # SignalToMetrics: converts enriched logs to metrics (exporter from logs, receiver to metrics)
@@ -122,6 +125,8 @@ exporters:
       ca_file: /etc/ssl/certs/service-ca.crt
       insecure_skip_verify: true
   awss3/logs:
+    sending_queue:
+      enabled: true
     s3uploader:
       endpoint: ${env:S3_ENDPOINT}
       region: ${env:AWS_REGION}
