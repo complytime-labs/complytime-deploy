@@ -36,7 +36,8 @@ tasks:
     status:
       - |
         if [ "{{.MODE}}" = "quadlet" ]; then
-          systemctl --user is-active complytime-collector.service &>/dev/null
+          systemctl --user list-units 'complytime-*.service' --no-pager --plain \
+            | grep -q 'running'
         else
           oc get pods -n "{{.NAMESPACE}}" 2>/dev/null | grep -q Running
         fi
