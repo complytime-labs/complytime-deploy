@@ -11,6 +11,10 @@ vars:
   # Deployment mode: crc (OpenShift Local) or quadlet (Podman Quadlet)
   MODE: '{{.MODE | default "crc"}}'
   QUADLET_RUNTIME: "quadlet/runtime"
+  RC_IMAGE: "docker.io/rustfs/rc@sha256:ca85fbee9f96425446915cb08b41d5e246c782eeb3f6a00d3b8294fce5219891"
+  S3_BUCKET: "complytime-evidence"
+  S3_ACCESS_KEY: "rustfsadmin"
+  S3_SECRET_KEY: "rustfsadmin"
 
 tasks:
   default:
@@ -26,6 +30,7 @@ tasks:
       - task: install-complyctl
       - task: install-venom
       - task: deploy-if-needed
+      - task: _ensure-bucket
       - task: extract-ca
       - task: port-forward
       - task: pull-bundle
@@ -49,6 +54,21 @@ tasks:
         fi
         echo "Stack not deployed — deploying..."
       - task: :sk:_deploy
+
+  _ensure-bucket:
+    desc: Create S3 bucket with anonymous read access
+    internal: true
+    cmds:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          echo "Ensuring S3 bucket with anonymous read (quadlet)..."
+          podman run --rm --network complytime --entrypoint="" \
+            "{{.RC_IMAGE}}" /bin/sh -c \
+            'rc alias set local http://complytime-rustfs:9000 "{{.S3_ACCESS_KEY}}" "{{.S3_SECRET_KEY}}" && \
+             rc mb --ignore-existing local/{{.S3_BUCKET}} && \
+             rc anonymous set public local/{{.S3_BUCKET}}'
+          echo "OK: bucket {{.S3_BUCKET}} ready with anonymous read"
+        fi
 
   check-prereqs:
     desc: Verify required CLI tools are available
