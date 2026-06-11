@@ -1,0 +1,117 @@
+name: Validate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Skaffold Render
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install Task
+        uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
+
+      - name: Install kustomize
+        run: |
+          set -euo pipefail
+          KUSTOMIZE_VERSION="v5.6.0"
+          KUSTOMIZE_SHA256="54e4031ddc4e7fc59e408da29e7c646e8e57b8088c51b84b3df0864f47b5148f" # DevSkim: ignore DS173237 - SHA256 checksum for kustomize binary integrity verification, not a secret
+          curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" \
+            -o /tmp/kustomize.tar.gz
+          echo "${KUSTOMIZE_SHA256}  /tmp/kustomize.tar.gz" | sha256sum -c -
+          tar xz -C /usr/local/bin -f /tmp/kustomize.tar.gz
+          rm /tmp/kustomize.tar.gz
+          kustomize version
+
+      - name: Install skaffold
+        run: |
+          set -euo pipefail
+          SKAFFOLD_VERSION="v2.18.3"
+          SKAFFOLD_SHA256="d8bfce071e3e3096736f12f0233d24f16d4baedaadd2181e1eaa1865a346ec3f" # DevSkim: ignore DS173237 - SHA256 checksum for skaffold binary integrity verification, not a secret
+          curl -fsSL "https://storage.googleapis.com/skaffold/releases/${SKAFFOLD_VERSION}/skaffold-linux-amd64" \
+            -o /tmp/skaffold
+          echo "${SKAFFOLD_SHA256}  /tmp/skaffold" | sha256sum -c -
+          mv /tmp/skaffold /usr/local/bin/skaffold
+          chmod +x /usr/local/bin/skaffold
+          skaffold version
+
+      - name: Validate all profiles
+        run: task sk:validate
+
+      - name: Render all profiles
+        run: task sk:render-all
+
+      - name: Scan with Checkov
+        run: |
+          set -euo pipefail
+          CHECKOV_VERSION="3.2.529"
+          CHECKOV_SHA256="fb2d5418913343933e0b33442b7cb49b373af75f4f919c094d6c3b6fb3d03d36" # DevSkim: ignore DS173237 - SHA256 checksum for checkov wheel integrity verification, not a secret
+          pip download -q --no-deps -d /tmp "checkov==${CHECKOV_VERSION}"
+          echo "${CHECKOV_SHA256}  /tmp/checkov-${CHECKOV_VERSION}-py3-none-any.whl" | sha256sum -c -
+          pip install -q "/tmp/checkov-${CHECKOV_VERSION}-py3-none-any.whl"
+          checkov -d .rendered-manifests/ \
+            --framework kubernetes \
+            --output sarif \
+            --output-file-path .rendered-manifests/ \
+            --soft-fail
+        continue-on-error: true
+
+      - name: Scan with Trivy
+        run: |
+          set -euo pipefail
+          TRIVY_VERSION="0.71.0"
+          TRIVY_SHA256="30a3d22b23f88c233f1658f562fb477cae3b3e8b4761109d515b7698daf85814" # DevSkim: ignore DS173237 - SHA256 checksum for trivy binary integrity verification, not a secret
+          curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            -o /tmp/trivy.tar.gz
+          echo "${TRIVY_SHA256}  /tmp/trivy.tar.gz" | sha256sum -c -
+          tar xz -C /usr/local/bin -f /tmp/trivy.tar.gz trivy
+          rm /tmp/trivy.tar.gz
+          trivy config .rendered-manifests/ \
+            --format sarif \
+            --output .rendered-manifests/trivy-results.sarif \
+            --exit-code 0
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kustomize-scan-results
+          path: .rendered-manifests/
+          retention-days: 7
+
+      - name: Upload Checkov SARIF to Code Scanning
+        if: always() && hashFiles('.rendered-manifests/results_sarif.sarif') != ''
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: .rendered-manifests/results_sarif.sarif
+          category: checkov-kustomize
+
+      - name: Upload Trivy SARIF to Code Scanning
+        if: always() && hashFiles('.rendered-manifests/trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: .rendered-manifests/trivy-results.sarif
+          category: trivy-kustomize
+

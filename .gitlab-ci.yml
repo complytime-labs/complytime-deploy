@@ -15,7 +15,7 @@ stages:
       echo "zchunk=False" >> /etc/dnf/dnf.conf
       dnf clean all
       dnf install -y wget tar jq
-      # TODO: Snag https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz, validate against https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/sha256sum.txt and https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/sha256sum.txt.gpg
+      # TODO: Snag https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz, validate against https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/sha256sum.txt and https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/sha256sum.txt.gpg # DevSkim: ignore DS176209 - legitimate engineering TODO to add integrity verification
       tar -xf oc.tar
       mkdir -p /usr/local/bin
       mv oc /usr/local/bin/oc

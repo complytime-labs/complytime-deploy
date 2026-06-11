@@ -7,21 +7,21 @@ spec:
   template:
     spec:
       containers:
-      - name: collector
-        env:
-          - name: LOKI_HOST
-            value: "loki"
-          - name: S3_ENDPOINT
-            value: "http://rustfs:9000"
-          - name: S3_BUCKETNAME
-            value: "complytime-evidence"
-          - name: S3_OBJ_DIR
-            value: "local"
-          - name: AWS_REGION
-            value: "us-east-1"
-          - name: AWS_ACCESS_KEY_ID
-            value: "rustfsadmin"
-            valueFrom: null
-          - name: AWS_SECRET_ACCESS_KEY
-            value: "rustfsadmin"
-            valueFrom: null
+        - name: collector
+          env:
+            - name: LOKI_HOST
+              value: "loki"
+            - name: S3_ENDPOINT
+              value: "http://rustfs:9000"
+            - name: S3_BUCKETNAME
+              value: "complytime-evidence"
+            - name: S3_OBJ_DIR
+              value: "local"
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: AWS_ACCESS_KEY_ID
+              value: "rustfsadmin"
+              valueFrom: null
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "rustfsadmin"
+              valueFrom: null

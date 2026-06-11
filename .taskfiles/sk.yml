@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 vars:
   OC_PROJECT:
@@ -34,6 +34,18 @@ tasks:
     desc: "Render manifests to stdout (usage: task sk:render, or task sk:render -- stage)"
     cmds:
       - skaffold render {{if .CLI_ARGS}}-p {{.CLI_ARGS}}{{end}}
+
+  render-all:
+    desc: Render all Skaffold profiles to .rendered-manifests/ for scanning
+    vars:
+      RENDER_DIR: "{{.ROOT_DIR}}/.rendered-manifests"
+    cmds:
+      - rm -rf "{{.RENDER_DIR}}"
+      - mkdir -p "{{.RENDER_DIR}}"
+      - skaffold render > "{{.RENDER_DIR}}/local.yaml"
+      - skaffold render -p stage > "{{.RENDER_DIR}}/stage.yaml"
+      - skaffold render -p production > "{{.RENDER_DIR}}/production.yaml"
+      - echo "Rendered all profiles to {{.RENDER_DIR}}/"
 
   validate:
     desc: Validate all Skaffold profiles (render + server-side dry-run if logged in)

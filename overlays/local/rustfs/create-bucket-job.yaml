@@ -7,62 +7,92 @@ metadata:
 spec:
   template:
     spec:
+      automountServiceAccountToken: false
       restartPolicy: OnFailure
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-      - name: wait-for-rustfs
-        image: docker.io/rustfs/rc@sha256:ca85fbee9f96425446915cb08b41d5e246c782eeb3f6a00d3b8294fce5219891
-        command:
-          - /bin/sh
-          - -c
-          - |
-            until rc alias set local http://rustfs:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" 2>/dev/null; do
-              echo "waiting for rustfs..."
-              sleep 2
-            done
-        env:
-          # rc writes alias config to $HOME; OpenShift assigns a random UID
-          # whose default home is read-only, causing "Permission denied (os error 13)".
-          - name: HOME
-            value: /tmp
-          - name: AWS_ACCESS_KEY_ID
-            value: rustfsadmin
-          - name: AWS_SECRET_ACCESS_KEY
-            value: rustfsadmin
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop: [ALL]
+        - name: wait-for-rustfs
+          image: docker.io/rustfs/rc@sha256:ca85fbee9f96425446915cb08b41d5e246c782eeb3f6a00d3b8294fce5219891
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until rc alias set local http://rustfs:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" 2>/dev/null; do
+                echo "waiting for rustfs..."
+                sleep 2
+              done
+          env:
+            # rc writes alias config to $HOME; OpenShift assigns a random UID
+            # whose default home is read-only, causing "Permission denied (os error 13)".
+            - name: HOME
+              value: /tmp
+            - name: AWS_ACCESS_KEY_ID
+              value: rustfsadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: rustfsadmin
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       containers:
-      - name: create-bucket
-        image: docker.io/rustfs/rc@sha256:ca85fbee9f96425446915cb08b41d5e246c782eeb3f6a00d3b8294fce5219891
-        command:
-          - /bin/sh
-          - -c
-          - |
-            rc alias set local http://rustfs:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
-            rc mb --ignore-existing local/complytime-evidence
-            rc anonymous set public local/complytime-evidence
-        env:
-          # Same HOME override as init container — rc needs a writable config dir.
-          - name: HOME
-            value: /tmp
-          - name: AWS_ACCESS_KEY_ID
-            value: rustfsadmin
-          - name: AWS_SECRET_ACCESS_KEY
-            value: rustfsadmin
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "50m"
-          limits:
-            memory: "128Mi"
-            cpu: "100m"
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop: [ALL]
+        - name: create-bucket
+          image: docker.io/rustfs/rc@sha256:ca85fbee9f96425446915cb08b41d5e246c782eeb3f6a00d3b8294fce5219891
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              rc alias set local http://rustfs:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
+              rc mb --ignore-existing local/complytime-evidence
+              rc anonymous set public local/complytime-evidence
+          env:
+            # Same HOME override as init container — rc needs a writable config dir.
+            - name: HOME
+              value: /tmp
+            - name: AWS_ACCESS_KEY_ID
+              value: rustfsadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: rustfsadmin
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
   backoffLimit: 3

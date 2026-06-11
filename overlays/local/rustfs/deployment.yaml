@@ -15,47 +15,68 @@ spec:
       labels:
         app: rustfs
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:
-      - name: rustfs
-        image: docker.io/rustfs/rustfs@sha256:d441111efe3af5bbd6e29eba7cd124f96bb7d49a0612390907f9216d5f970382 # v1.0.0-beta.3
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
-        args: ["server", "/data", "--console-address", ":9001"]
-        ports:
-          - containerPort: 9000
-            name: s3
-          - containerPort: 9001
-            name: console
-        env:
-          - name: RUSTFS_ACCESS_KEY
-            value: "rustfsadmin"
-          - name: RUSTFS_SECRET_KEY
-            value: "rustfsadmin"
-        volumeMounts:
-          - name: data
-            mountPath: /data
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 9000
-            scheme: HTTP
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        resources:
-          requests:
-            memory: "128Mi"
-            cpu: "50m"
-          limits:
-            memory: "256Mi"
-            cpu: "250m"
+        - name: rustfs
+          image: docker.io/rustfs/rustfs@sha256:d441111efe3af5bbd6e29eba7cd124f96bb7d49a0612390907f9216d5f970382 # v1.0.0-beta.3
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop:
+                - ALL
+          args: ["server", "/data", "--console-address", ":9001"]
+          ports:
+            - containerPort: 9000
+              name: s3
+            - containerPort: 9001
+              name: console
+          env:
+            - name: RUSTFS_ACCESS_KEY
+              value: "rustfsadmin"
+            - name: RUSTFS_SECRET_KEY
+              value: "rustfsadmin"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
       volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: rustfs-storage
+        - name: data
+          persistentVolumeClaim:
+            claimName: rustfs-storage
+        - name: tmp
+          emptyDir: {}

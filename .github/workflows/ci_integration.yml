@@ -1,0 +1,99 @@
+name: Integration Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration-test:
+    name: Quadlet Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install Task
+        uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
+
+      - name: Install prerequisites
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq openssl podman
+          # yq — install from GitHub releases (not available in apt)
+          YQ_VERSION="v4.44.6"
+          YQ_SHA256="0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598" # DevSkim: ignore DS173237 - SHA256 checksum for yq binary integrity verification, not a secret
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
+            -o /tmp/yq
+          echo "${YQ_SHA256}  /tmp/yq" | sha256sum -c -
+          sudo mv /tmp/yq /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Bootstrap systemd user session
+        run: |
+          set -euo pipefail
+          sudo loginctl enable-linger "$(whoami)"
+          # Ensure XDG_RUNTIME_DIR is set for systemd user session
+          XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export XDG_RUNTIME_DIR
+          echo "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}" >> "$GITHUB_ENV"
+          # Verify systemd user session is functional
+          systemctl --user status || true
+          echo "systemd user session bootstrapped"
+
+      - name: Setup Quadlet stack
+        run: task quadlet:setup
+
+      - name: Start Quadlet stack
+        run: task quadlet:start
+
+      - name: Wait for stack health
+        run: |
+          set -euo pipefail
+          MAX_ATTEMPTS=30
+          DELAY=5
+          for i in $(seq 1 "$MAX_ATTEMPTS"); do
+            if curl -fsSk "https://localhost:8088/eventreceiver/healthcheck" > /dev/null 2>&1; then
+              echo "Collector is healthy (attempt $i/$MAX_ATTEMPTS)"
+              exit 0
+            fi
+            echo "Waiting for collector... (attempt $i/$MAX_ATTEMPTS)"
+            sleep "$DELAY"
+          done
+          echo "ERROR: Collector failed to become healthy after $((MAX_ATTEMPTS * DELAY))s"
+          # Dump diagnostic info before failing
+          systemctl --user status 'complytime-*' || true
+          journalctl --user --no-pager -n 50 || true
+          exit 1
+
+      - name: Run integration tests
+        run: task integration:test MODE=quadlet
+
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: integration-test-output
+          path: .test-output/
+          retention-days: 7
+
+      - name: Teardown Quadlet stack
+        if: always()
+        run: task quadlet:teardown --yes
+

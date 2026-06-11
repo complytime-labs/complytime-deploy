@@ -12,9 +12,19 @@ deploy:
     hooks:
       before:
         - host:
-            command: ["sh", "-c", "oc new-project complytime-dev 2>/dev/null || oc project complytime-dev"]
+            command:
+              [
+                "sh",
+                "-c",
+                "oc new-project complytime-dev 2>/dev/null || oc project complytime-dev",
+              ]
         - host:
-            command: ["sh", "-c", "oc delete job rustfs-create-bucket -n complytime-dev 2>/dev/null || true"]
+            command:
+              [
+                "sh",
+                "-c",
+                "oc delete job rustfs-create-bucket -n complytime-dev 2>/dev/null || true",
+              ]
 
 portForward:
   - resourceType: service
@@ -56,9 +66,19 @@ profiles:
         hooks:
           before:
             - host:
-                command: ["sh", "-c", "oc login \"$OPENSHIFT_SERVER_STAGE\" --token=\"$OPENSHIFT_STAGE_TOKEN\""]
+                command:
+                  [
+                    "sh",
+                    "-c",
+                    'oc login "$OPENSHIFT_SERVER_STAGE" --token="$OPENSHIFT_STAGE_TOKEN"',
+                  ]
             - host:
-                command: ["sh", "-c", "oc new-project complytime-stage 2>/dev/null || oc project complytime-stage"]
+                command:
+                  [
+                    "sh",
+                    "-c",
+                    "oc new-project complytime-stage 2>/dev/null || oc project complytime-stage",
+                  ]
             - host:
                 command: ["./scripts/apply-sealed-secrets.sh", "stage"]
           after:
@@ -75,9 +95,19 @@ profiles:
         hooks:
           before:
             - host:
-                command: ["sh", "-c", "oc login \"$OPENSHIFT_SERVER_PRODUCTION\" --token=\"$OPENSHIFT_PRODUCTION_TOKEN\""]
+                command:
+                  [
+                    "sh",
+                    "-c",
+                    'oc login "$OPENSHIFT_SERVER_PRODUCTION" --token="$OPENSHIFT_PRODUCTION_TOKEN"',
+                  ]
             - host:
-                command: ["sh", "-c", "oc new-project complytime-prod 2>/dev/null || oc project complytime-prod"]
+                command:
+                  [
+                    "sh",
+                    "-c",
+                    "oc new-project complytime-prod 2>/dev/null || oc project complytime-prod",
+                  ]
             - host:
                 command: ["./scripts/apply-sealed-secrets.sh", "production"]
           after:
