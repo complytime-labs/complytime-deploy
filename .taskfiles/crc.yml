@@ -1,0 +1,93 @@
+version: '3'
+
+vars:
+  CRC_CPUS: '{{.CRC_CPUS | default "6"}}'
+  CRC_MEMORY: '{{.CRC_MEMORY | default "16384"}}'
+  CRC_DISK: '{{.CRC_DISK | default "60"}}'
+
+tasks:
+  default:
+    silent: true
+    cmd: task crc --list
+
+  _require-crc:
+    internal: true
+    preconditions:
+      - sh: command -v crc
+        msg: "crc not installed — download from https://developers.redhat.com/products/openshift-local"
+
+  setup:
+    desc: Initial CRC setup — downloads bundle and configures resources ({{.CRC_CPUS}} CPUs, {{.CRC_MEMORY}} MiB RAM)
+    deps: [_require-crc]
+    cmds:
+      - crc setup
+      - crc config set cpus {{.CRC_CPUS}}
+      - crc config set memory {{.CRC_MEMORY}}
+      - crc config set disk-size {{.CRC_DISK}}
+      - echo ''
+      - echo "CRC configured with {{.CRC_CPUS}} CPUs, {{.CRC_MEMORY}} MiB RAM, and {{.CRC_DISK}}G Disk."
+      - 'echo "Next: task crc:start"'
+
+  start:
+    desc: Start OpenShift Local cluster
+    deps: [_require-crc]
+    cmds:
+      - crc start
+      - echo ''
+      - crc console --credentials
+      - echo ''
+      - 'echo "Next: eval \$(crc oc-env) && task crc:login"'
+
+  stop:
+    desc: Stop OpenShift Local (preserves cluster data)
+    deps: [_require-crc]
+    cmds:
+      - crc stop
+
+  status:
+    desc: Show OpenShift Local cluster status
+    deps: [_require-crc]
+    cmds:
+      - crc status
+      - silent: true
+        cmd: |
+          printf '\nSealedSecrets controller: '
+          if oc -n kube-system get deployment/sealed-secrets-controller -o jsonpath='{.status.availableReplicas}' 2>/dev/null | grep -q '^[1-9]'; then
+            echo 'enabled'
+          else
+            echo 'not found'
+          fi
+        ignore_error: true
+
+  login:
+    desc: Log in to the CRC cluster (opens browser)
+    deps: [_require-crc]
+    preconditions:
+      - sh: command -v oc
+        msg: "oc not found — run 'eval $(crc oc-env)' first"
+    cmds:
+      - oc login --web --server=https://api.crc.testing:6443
+
+  sealed-secrets:
+    desc: Install the SealedSecrets controller on the CRC cluster
+    deps: [_require-crc]
+    preconditions:
+      - sh: oc whoami &>/dev/null
+        msg: "Not logged into a cluster — run 'task crc:login' first"
+    cmds:
+      - oc apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.24.1/controller.yaml
+      - oc -n kube-system rollout status deployment/sealed-secrets-controller --timeout=240s
+
+  delete:
+    desc: Delete the CRC cluster and all data — DESTRUCTIVE
+    deps: [_require-crc]
+    prompt: "This will destroy the CRC cluster and all its data. Continue?"
+    cmds:
+      - crc delete
+
+  clean:
+    desc: Delete the CRC cluster and reclaim disk space — DESTRUCTIVE
+    deps: [_require-crc]
+    cmds:
+      - task: delete
+      - crc cleanup

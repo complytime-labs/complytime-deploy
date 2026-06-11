@@ -1,0 +1,35 @@
+# ComplyTime task runner — run 'task' to see available commands.
+# Requires: https://taskfile.dev
+version: '3'
+
+silent: true
+
+includes:
+  sk:
+    taskfile: .taskfiles/sk.yml
+  crc:
+    taskfile: .taskfiles/crc.yml
+  quadlet:
+    taskfile: .taskfiles/quadlet.yml
+  integration:
+    taskfile: .taskfiles/integration.yml
+
+vars:
+  TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'
+
+env:
+  DOCKER_HOST:
+    sh: |
+      if [ -n "${DOCKER_HOST:-}" ]; then
+        echo "$DOCKER_HOST"
+      elif command -v docker &>/dev/null; then
+        docker context inspect --format '{{ "{{" }}.Endpoints.docker.Host{{ "}}" }}' 2>/dev/null || echo ""
+      elif command -v podman &>/dev/null; then
+        echo "unix://${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+      fi
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task --list
