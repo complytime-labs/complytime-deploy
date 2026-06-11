@@ -1,0 +1,52 @@
+executor: fetch-s3-object
+input:
+  s3_port: "9000"
+  bucket: ""
+  prefix: ""
+  timeout: "60"
+  interval: "3"
+
+steps:
+  - type: exec
+    script: |
+      HOST="127.0.0.1:{{.input.s3_port}}"
+      DEADLINE=$(($(date +%s) + {{.input.timeout}}))
+      ATTEMPT=0
+      echo "FETCH: bucket={{.input.bucket}} prefix={{.input.prefix}} timeout={{.input.timeout}}s" >&2
+      while [ $(date +%s) -lt $DEADLINE ]; do
+        ATTEMPT=$((ATTEMPT + 1))
+        REMAINING=$((DEADLINE - $(date +%s)))
+        HTTP_CODE=$(curl -s -o /tmp/s3_list.xml -w '%{http_code}' \
+          "http://${HOST}/{{.input.bucket}}?list-type=2&prefix={{.input.prefix}}" \
+          2>/dev/null) || HTTP_CODE="000"
+        if [ "$HTTP_CODE" = "200" ]; then
+          KEY=$(grep -o '<Key>[^<]*</Key>' /tmp/s3_list.xml | head -1 | sed 's/<[^>]*>//g')
+          if [ -n "$KEY" ]; then
+            OBJ_CODE=$(curl -s -o /tmp/s3_object.json -w '%{http_code}' \
+              "http://${HOST}/{{.input.bucket}}/${KEY}" 2>/dev/null) || OBJ_CODE="000"
+            if [ "$OBJ_CODE" = "200" ]; then
+              echo "FETCHED: ${KEY}" >&2
+              cat /tmp/s3_object.json
+              rm -f /tmp/s3_list.xml /tmp/s3_object.json
+              exit 0
+            fi
+            echo "  fetch-s3-object attempt $ATTEMPT: download HTTP $OBJ_CODE (${REMAINING}s remaining)" >&2
+          else
+            echo "  fetch-s3-object attempt $ATTEMPT: no keys under prefix (${REMAINING}s remaining)" >&2
+          fi
+        else
+          echo "  fetch-s3-object attempt $ATTEMPT: list HTTP $HTTP_CODE (${REMAINING}s remaining)" >&2
+        fi
+        sleep {{.input.interval}}
+      done
+      echo "TIMEOUT: no object under prefix {{.input.prefix}} after {{.input.timeout}}s ($ATTEMPT attempts)"
+      rm -f /tmp/s3_list.xml /tmp/s3_object.json
+      exit 1
+    vars:
+      object_json:
+        from: result.systemout
+    assertions:
+      - result.code ShouldEqual 0
+
+output:
+  object_json: "{{.object_json}}"

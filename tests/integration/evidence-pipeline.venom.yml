@@ -1,0 +1,376 @@
+name: Evidence pipeline end-to-end
+vars:
+  collector_host: "collector.complytime-dev.svc"
+  loki_host: "loki.complytime-dev.svc"
+  webhook_port: "8088"
+  loki_port: "3100"
+  s3_port: "9000"
+  s3_bucket: "complytime-evidence"
+  ca_cert: ".test-output/service-ca.crt"
+  catalog_id: "repo-branch-protection"
+
+testcases:
+  - name: Collector webhook is reachable
+    steps:
+      - type: http
+        url: "https://{{.collector_host}}:{{.webhook_port}}/eventreceiver/healthcheck"
+        method: GET
+        tls_root_ca: "{{.ca_cert}}"
+        resolve:
+          - "{{.collector_host}}:{{.webhook_port}}:127.0.0.1"
+        assertions:
+          - result.statuscode ShouldEqual 200
+
+  - name: "POST pull-request-enforcement"
+    steps:
+      - type: post-evidence
+        control_id: "pull-request-enforcement"
+        requirement_id: "require-pull-request"
+        catalog_id: "{{.catalog_id}}"
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  - name: "POST approval-requirements"
+    steps:
+      - type: post-evidence
+        control_id: "approval-requirements"
+        requirement_id: "require-approval"
+        catalog_id: "{{.catalog_id}}"
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  - name: "POST force-push-restriction"
+    steps:
+      - type: post-evidence
+        control_id: "force-push-restriction"
+        requirement_id: "restrict-force-push"
+        catalog_id: "{{.catalog_id}}"
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  - name: "POST admin-bypass-prevention"
+    steps:
+      - type: post-evidence
+        control_id: "admin-bypass-prevention"
+        requirement_id: "prevent-admin-bypass"
+        catalog_id: "{{.catalog_id}}"
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  - name: "POST code-owner-enforcement"
+    steps:
+      - type: post-evidence
+        control_id: "code-owner-enforcement"
+        requirement_id: "require-code-owners"
+        catalog_id: "{{.catalog_id}}"
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  - name: "poll-loki pull-request-enforcement (polling)"
+    steps:
+      - type: poll-loki
+        value: "pull-request-enforcement"
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki approval-requirements (polling)"
+    steps:
+      - type: poll-loki
+        value: "approval-requirements"
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki force-push-restriction (polling)"
+    steps:
+      - type: poll-loki
+        value: "force-push-restriction"
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki admin-bypass-prevention (polling)"
+    steps:
+      - type: poll-loki
+        value: "admin-bypass-prevention"
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki code-owner-enforcement (polling)"
+    steps:
+      - type: poll-loki
+        value: "code-owner-enforcement"
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  # -- Loki attribute verification (uses data from the 5 POSTs above) ----------
+
+  - name: "verify policy_engine_name label"
+    steps:
+      - type: poll-loki
+        query: '{policy_rule_id="pull-request-enforcement", policy_engine_name="ampel"}'
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "verify policy_evaluation_result=Passed label"
+    steps:
+      - type: poll-loki
+        query: '{policy_rule_id="pull-request-enforcement", policy_evaluation_result="Passed"}'
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "verify policy_control_id metadata"
+    steps:
+      - type: poll-loki
+        query: '{policy_rule_id="pull-request-enforcement"} | policy_control_id = `require-pull-request`'
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "verify policy_config_include metadata"
+    steps:
+      - type: poll-loki
+        query: '{policy_rule_id="pull-request-enforcement"} | policy_config_include = `pull-request-enforcement`'
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "verify severity metadata"
+    steps:
+      - type: poll-loki
+        query: '{policy_rule_id="pull-request-enforcement"} | severity = `unknown`'
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  # -- Status mapping tests (POST with each status, verify Loki label) ---------
+
+  - name: "POST status-test-failure"
+    steps:
+      - type: post-evidence
+        control_id: "status-test-failure"
+        requirement_id: "require-status-test"
+        catalog_id: "{{.catalog_id}}"
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        status: "failure"
+        status_id: "2"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  - name: "POST status-test-not-run"
+    steps:
+      - type: post-evidence
+        control_id: "status-test-not-run"
+        requirement_id: "require-status-test"
+        catalog_id: "{{.catalog_id}}"
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        status: "not_run"
+        status_id: "0"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  - name: "POST status-test-needs-review"
+    steps:
+      - type: post-evidence
+        control_id: "status-test-needs-review"
+        requirement_id: "require-status-test"
+        catalog_id: "{{.catalog_id}}"
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        status: "needs_review"
+        status_id: "3"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  - name: "POST status-test-not-applicable"
+    steps:
+      - type: post-evidence
+        control_id: "status-test-not-applicable"
+        requirement_id: "require-status-test"
+        catalog_id: "{{.catalog_id}}"
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        status: "not_applicable"
+        status_id: "4"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  - name: "POST status-test-error"
+    steps:
+      - type: post-evidence
+        control_id: "status-test-error"
+        requirement_id: "require-status-test"
+        catalog_id: "{{.catalog_id}}"
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        status: "error"
+        status_id: "99"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  - name: "poll-loki status failure -> Failed"
+    steps:
+      - type: poll-loki
+        query: '{policy_rule_id="status-test-failure", policy_evaluation_result="Failed"}'
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki status not_run -> Not Run"
+    steps:
+      - type: poll-loki
+        query: '{policy_rule_id="status-test-not-run", policy_evaluation_result="Not Run"}'
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki status needs_review -> Needs Review"
+    steps:
+      - type: poll-loki
+        query: '{policy_rule_id="status-test-needs-review", policy_evaluation_result="Needs Review"}'
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki status not_applicable -> Not Applicable"
+    steps:
+      - type: poll-loki
+        query: '{policy_rule_id="status-test-not-applicable", policy_evaluation_result="Not Applicable"}'
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  - name: "poll-loki status error -> Unknown"
+    steps:
+      - type: poll-loki
+        query: '{policy_rule_id="status-test-error", policy_evaluation_result="Unknown"}'
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        assertions:
+          - result.log_line ShouldNotBeEmpty
+
+  # -- S3 polls (existing) ----------------------------------------------------
+
+  - name: "poll-s3 pull-request-enforcement (polling)"
+    steps:
+      - type: poll-s3
+        s3_port: "{{.s3_port}}"
+        bucket: "{{.s3_bucket}}"
+        prefix: "pull-request-enforcement/"
+
+        assertions:
+          - result.keys ShouldContainSubstring "evidence_"
+
+  - name: "poll-s3 approval-requirements (polling)"
+    steps:
+      - type: poll-s3
+        s3_port: "{{.s3_port}}"
+        bucket: "{{.s3_bucket}}"
+        prefix: "approval-requirements/"
+
+        assertions:
+          - result.keys ShouldContainSubstring "evidence_"
+
+  - name: "poll-s3 force-push-restriction (polling)"
+    steps:
+      - type: poll-s3
+        s3_port: "{{.s3_port}}"
+        bucket: "{{.s3_bucket}}"
+        prefix: "force-push-restriction/"
+
+        assertions:
+          - result.keys ShouldContainSubstring "evidence_"
+
+  - name: "poll-s3 admin-bypass-prevention (polling)"
+    steps:
+      - type: poll-s3
+        s3_port: "{{.s3_port}}"
+        bucket: "{{.s3_bucket}}"
+        prefix: "admin-bypass-prevention/"
+
+        assertions:
+          - result.keys ShouldContainSubstring "evidence_"
+
+  - name: "poll-s3 code-owner-enforcement (polling)"
+    steps:
+      - type: poll-s3
+        s3_port: "{{.s3_port}}"
+        bucket: "{{.s3_bucket}}"
+        prefix: "code-owner-enforcement/"
+
+        assertions:
+          - result.keys ShouldContainSubstring "evidence_"
+
+  # -- S3 content verification -------------------------------------------------
+
+  - name: "S3 object content verification"
+    steps:
+      - type: fetch-s3-object
+        s3_port: "{{.s3_port}}"
+        bucket: "{{.s3_bucket}}"
+        prefix: "pull-request-enforcement/"
+        assertions:
+          - result.object_json ShouldContainSubstring "policy.rule.id"
+          - result.object_json ShouldContainSubstring "pull-request-enforcement"
+          - result.object_json ShouldContainSubstring "policy.engine.name"
+          - result.object_json ShouldContainSubstring "ampel"
+          - result.object_json ShouldContainSubstring "policy.evaluation.result"
+          - result.object_json ShouldContainSubstring "Passed"
+          - result.object_json ShouldContainSubstring "policy.control.id"
+          - result.object_json ShouldContainSubstring "require-pull-request"

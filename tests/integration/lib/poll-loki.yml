@@ -1,0 +1,74 @@
+executor: poll-loki
+input:
+  label: "policy_rule_id"
+  value: ""
+  query: ""
+  loki_host: ""
+  loki_port: "3100"
+  ca_cert: ""
+  timeout: "60"
+  interval: "3"
+
+steps:
+  - type: exec
+    script: |
+      CUSTOM_QUERY='{{.input.query}}'
+      if [ -n "$CUSTOM_QUERY" ]; then
+        QUERY="$CUSTOM_QUERY"
+      else
+        LABEL="{{.input.label}}"
+        VALUE="{{.input.value}}"
+        QUERY="{${LABEL}=\"${VALUE}\"}"
+      fi
+      DEADLINE=$(($(date +%s) + {{.input.timeout}}))
+      ATTEMPT=0
+      echo "POLL: query=${QUERY} timeout={{.input.timeout}}s interval={{.input.interval}}s" >&2
+      while [ $(date +%s) -lt $DEADLINE ]; do
+        ATTEMPT=$((ATTEMPT + 1))
+        NOW=$(date +%s)
+        REMAINING=$((DEADLINE - NOW))
+        START=$(($NOW - 300))
+        BASE_URL="https://{{.input.loki_host}}:{{.input.loki_port}}/loki/api/v1/query_range"
+        HTTP_CODE=$(curl -s -o /tmp/loki_response.json -w '%{http_code}' \
+          --cacert "{{.input.ca_cert}}" \
+          --resolve "{{.input.loki_host}}:{{.input.loki_port}}:127.0.0.1" \
+          -G "$BASE_URL" \
+          --data-urlencode "query=${QUERY}" \
+          --data-urlencode "start=${START}" \
+          --data-urlencode "end=${NOW}" \
+          --data-urlencode "limit=5" \
+          2>/tmp/loki_err.txt) || HTTP_CODE="000"
+        if [ "$HTTP_CODE" = "200" ]; then
+          COUNT=$(jq -r '.data.result | length' /tmp/loki_response.json 2>/dev/null) || COUNT=0
+          if [ "$COUNT" -gt 0 ]; then
+            echo "FOUND: $COUNT result stream(s) for ${LABEL}=${VALUE} (attempt $ATTEMPT)"
+            jq -r '.data.result[0].values[0][1]' /tmp/loki_response.json 2>/dev/null | head -1
+            rm -f /tmp/loki_response.json /tmp/loki_err.txt
+            exit 0
+          fi
+          echo "  poll-loki attempt $ATTEMPT: HTTP $HTTP_CODE, 0 results (${REMAINING}s remaining)" >&2
+        elif [ "$HTTP_CODE" = "000" ]; then
+          CURL_ERR=$(cat /tmp/loki_err.txt 2>/dev/null | head -1)
+          echo "  poll-loki attempt $ATTEMPT: connection failed: $CURL_ERR (${REMAINING}s remaining)" >&2
+        else
+          BODY=$(cat /tmp/loki_response.json 2>/dev/null | head -c 200)
+          echo "  poll-loki attempt $ATTEMPT: HTTP $HTTP_CODE: $BODY (${REMAINING}s remaining)" >&2
+        fi
+        sleep {{.input.interval}}
+      done
+      echo "TIMEOUT: no results for ${LABEL}=${VALUE} after {{.input.timeout}}s ($ATTEMPT attempts)"
+      if [ -f /tmp/loki_response.json ]; then
+        echo "Last response:"
+        cat /tmp/loki_response.json | head -c 500
+      fi
+      rm -f /tmp/loki_response.json /tmp/loki_err.txt
+      exit 1
+    vars:
+      log_line:
+        from: result.systemout
+    assertions:
+      - result.code ShouldEqual 0
+      - result.systemout ShouldContainSubstring "FOUND"
+
+output:
+  log_line: "{{.log_line}}"

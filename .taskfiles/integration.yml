@@ -1,0 +1,332 @@
+version: '3'
+
+vars:
+  COMPLYCTL_VERSION: "v1.0.0-alpha.0"
+  VENOM_VERSION: "v1.3.0"
+  TOOLS_DIR: '{{.HOME}}/.local/bin'
+  TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'
+  NAMESPACE: "complytime-dev"
+  INTEGRATION_DIR: "tests/integration"
+  CHECKSUMS_FILE: ".tool_checksums"
+  # Deployment mode: crc (OpenShift Local) or quadlet (Podman Quadlet)
+  MODE: '{{.MODE | default "crc"}}'
+  QUADLET_RUNTIME: "quadlet/runtime"
+  RC_IMAGE: "docker.io/rustfs/rc@sha256:ca85fbee9f96425446915cb08b41d5e246c782eeb3f6a00d3b8294fce5219891"
+  S3_BUCKET: "complytime-evidence"
+  S3_ACCESS_KEY: "rustfsadmin"
+  S3_SECRET_KEY: "rustfsadmin"
+
+tasks:
+  default:
+    silent: true
+    desc: List integration test tasks
+    cmds:
+      - task --list integration
+
+  setup:
+    desc: Install tools, deploy stack if needed, extract CA, start port-forwards, pull OCI bundle
+    cmds:
+      - task: check-prereqs
+      - task: install-complyctl
+      - task: install-venom
+      - task: deploy-if-needed
+      - task: _ensure-bucket
+      - task: extract-ca
+      - task: port-forward
+      - task: pull-bundle
+
+  deploy-if-needed:
+    desc: Deploy the stack if no pods are running in the test namespace
+    internal: true
+    status:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          systemctl --user list-units 'complytime-*.service' --no-pager --plain \
+            | grep -q 'running'
+        else
+          oc get pods -n "{{.NAMESPACE}}" 2>/dev/null | grep -q Running
+        fi
+    cmds:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          echo "Quadlet stack not running — start it with: task quadlet:start"
+          exit 1
+        fi
+        echo "Stack not deployed — deploying..."
+      - task: :sk:_deploy
+
+  _ensure-bucket:
+    desc: Create S3 bucket with anonymous read access
+    internal: true
+    cmds:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          echo "Ensuring S3 bucket with anonymous read (quadlet)..."
+          podman run --rm --network complytime --entrypoint="" \
+            "{{.RC_IMAGE}}" /bin/sh -c \
+            'rc alias set local http://complytime-rustfs:9000 "{{.S3_ACCESS_KEY}}" "{{.S3_SECRET_KEY}}" && \
+             rc mb --ignore-existing local/{{.S3_BUCKET}} && \
+             rc anonymous set public local/{{.S3_BUCKET}}'
+          echo "OK: bucket {{.S3_BUCKET}} ready with anonymous read"
+        fi
+
+  check-prereqs:
+    desc: Verify required CLI tools are available
+    internal: true
+    cmds:
+      - |
+        REQUIRED="jq yq curl"
+        if [ "{{.MODE}}" = "crc" ]; then
+          REQUIRED="$REQUIRED oc"
+        fi
+        for cmd in $REQUIRED; do
+          if ! command -v "$cmd" &>/dev/null; then
+            echo "ERROR: $cmd not found"
+            exit 1
+          fi
+        done
+        echo "OK: prerequisites available (mode={{.MODE}})"
+
+  install-complyctl:
+    desc: Install complyctl with SHA256 verification
+    status:
+      - test -x {{.TOOLS_DIR}}/complyctl
+      - complyctl version 2>&1 | grep -q "{{.COMPLYCTL_VERSION}}"
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fL -o /tmp/complyctl.tar.gz
+          "https://github.com/complytime/complyctl/releases/download/{{.COMPLYCTL_VERSION}}/complyctl_linux_x86_64.tar.gz"
+      - |
+        COMPLYCTL_SHA=$(grep "complyctl/{{.COMPLYCTL_VERSION}}/linux/x86_64" {{.CHECKSUMS_FILE}} | cut -d: -f2 | tr -d ' ')
+        echo "${COMPLYCTL_SHA}  /tmp/complyctl.tar.gz" | sha256sum -c -
+      - tar -xzf /tmp/complyctl.tar.gz -C /tmp
+      - install /tmp/complyctl "{{.TOOLS_DIR}}/complyctl"
+      - rm -rf /tmp/complyctl.tar.gz /tmp/complyctl /tmp/LICENSE /tmp/README.md /tmp/openscap-plugin
+      - complyctl version
+
+  install-venom:
+    desc: Install venom with SHA256 verification
+    status:
+      - test -x {{.TOOLS_DIR}}/venom
+      - venom version 2>&1 | grep -q "{{.VENOM_VERSION}}"
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fL -o /tmp/venom.linux-amd64
+          "https://github.com/ovh/venom/releases/download/{{.VENOM_VERSION}}/venom.linux-amd64"
+      - |
+        VENOM_SHA=$(grep "venom/{{.VENOM_VERSION}}/linux/x86_64" {{.CHECKSUMS_FILE}} | cut -d: -f2 | tr -d ' ')
+        echo "${VENOM_SHA}  /tmp/venom.linux-amd64" | sha256sum -c -
+      - install /tmp/venom.linux-amd64 "{{.TOOLS_DIR}}/venom"
+      - rm -f /tmp/venom.linux-amd64
+      - venom version
+
+  extract-ca:
+    desc: Extract CA certificate for TLS verification
+    status:
+      - |
+        # Re-extract when switching between CRC and quadlet — the CA differs.
+        [ -f "{{.TEST_DIR}}/service-ca.crt" ] || exit 1
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          openssl x509 -in "{{.TEST_DIR}}/service-ca.crt" -noout -subject 2>/dev/null \
+            | grep -q "ComplyTime Local CA"
+        else
+          openssl x509 -in "{{.TEST_DIR}}/service-ca.crt" -noout -subject 2>/dev/null \
+            | grep -q "openshift-service-serving-signer"
+        fi
+    cmds:
+      - |
+        mkdir -p "{{.TEST_DIR}}"
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          CA_SRC="{{.QUADLET_RUNTIME}}/certs/ca.crt"
+          if [ ! -f "$CA_SRC" ]; then
+            echo "ERROR: Quadlet CA cert not found at $CA_SRC"
+            echo "  Run: task quadlet:setup"
+            exit 1
+          fi
+          cp "$CA_SRC" "{{.TEST_DIR}}/service-ca.crt"
+          echo "OK: Quadlet CA cert copied to {{.TEST_DIR}}/service-ca.crt"
+        else
+          echo "Extracting service CA from namespace {{.NAMESPACE}}..."
+          for i in $(seq 1 12); do
+            CA=$(oc get configmap service-ca-bundle -n "{{.NAMESPACE}}" \
+              -o jsonpath='{.data.service-ca\.crt}' 2>/dev/null) || true
+            if [ -n "$CA" ]; then
+              echo "$CA" > "{{.TEST_DIR}}/service-ca.crt"
+              echo "OK: service CA extracted to {{.TEST_DIR}}/service-ca.crt"
+              exit 0
+            fi
+            echo "  Waiting for service CA bundle... ($i/12)"
+            sleep 5
+          done
+          echo "ERROR: service CA bundle not available after 60s"
+          echo "  Ensure the stack is deployed: task sk:run"
+          exit 1
+        fi
+
+  pull-bundle:
+    desc: Pull OCI policy bundle via complyctl
+    dir: "{{.INTEGRATION_DIR}}"
+    cmds:
+      - |
+        echo "Pulling OCI policy bundle..."
+        if complyctl get 2>&1; then
+          echo "OK: bundle pulled"
+        else
+          echo "WARNING: complyctl get failed (Quay.io may be unreachable)"
+          echo "  Pull tests will be skipped"
+        fi
+        # complyctl writes a .complytime/ log dir in cwd — move it to .test-output/
+        if [ -d .complytime ]; then
+          rm -rf "../../{{.TEST_DIR}}/.complytime"
+          mv .complytime "../../{{.TEST_DIR}}/"
+        fi
+
+  test:
+    desc: Run all integration test suites (runs setup if needed)
+    cmds:
+      - task: setup
+      - task: check-stack
+      - task: test-pull
+      - task: test-pipeline
+
+  port-forward:
+    desc: Start oc port-forward for all services (CRC mode only)
+    cmds:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          echo "Quadlet publishes ports directly — port-forward not needed"
+          exit 0
+        fi
+
+        # Detect non-oc processes holding ports we need to forward.
+        # Podman rootless networking (rootlessport, pasta) binds 0.0.0.0:<port>
+        # and silently shadows oc port-forward, routing traffic to the wrong backend.
+        CONFLICT=0
+        for FWD in "svc/collector 8088:8088" "svc/collector 4318:4318" "svc/collector 4317:4317" \
+                   "svc/loki 3100:3100" "svc/rustfs 9000:9000" "svc/grafana 3000:3000"; do
+          LOCAL_PORT=$(echo "$FWD" | cut -d' ' -f2 | cut -d: -f1)
+          HOLDER=$(ss -tlnp "sport = :${LOCAL_PORT}" 2>/dev/null \
+            | awk '/LISTEN/{print $NF}' | grep -oP 'users:\(\("\K[^"]+' | head -1)
+          if [ -n "$HOLDER" ] && [ "$HOLDER" != "oc" ]; then
+            echo "ERROR: port $LOCAL_PORT is held by '$HOLDER' (not oc port-forward)"
+            CONFLICT=1
+          fi
+        done
+        if [ "$CONFLICT" -eq 1 ]; then
+          echo ""
+          echo "  Quadlet/Podman containers conflict with CRC port-forwards."
+          echo "  Stop them first:  task quadlet:teardown"
+          exit 1
+        fi
+
+        # Kill any stale port-forwards from a previous run
+        pkill -f "oc port-forward.*-n {{.NAMESPACE}}" 2>/dev/null || true
+        sleep 1
+        mkdir -p "{{.TEST_DIR}}"
+
+        for FWD in "svc/collector 8088:8088" "svc/collector 4318:4318" "svc/collector 4317:4317" \
+                   "svc/loki 3100:3100" "svc/rustfs 9000:9000" "svc/grafana 3000:3000"; do
+          SVC=$(echo "$FWD" | cut -d' ' -f1)
+          PORTS=$(echo "$FWD" | cut -d' ' -f2)
+          LOCAL_PORT=$(echo "$PORTS" | cut -d: -f1)
+          # Check if port is already forwarded by a previous oc port-forward
+          if pgrep -f "oc port-forward.*${LOCAL_PORT}:.*-n {{.NAMESPACE}}" >/dev/null 2>&1; then
+            echo "OK: port $LOCAL_PORT already forwarded"
+            continue
+          fi
+          nohup oc port-forward "$SVC" "$PORTS" -n "{{.NAMESPACE}}" \
+            >> "{{.TEST_DIR}}/port-forward.log" 2>&1 &
+          echo "  Forwarding $SVC $PORTS (pid $!)"
+        done
+
+        # Wait for collector webhook to become reachable
+        echo "  Waiting for port-forwards to establish..."
+        for i in $(seq 1 15); do
+          if curl -sf -k https://localhost:8088/eventreceiver/healthcheck >/dev/null 2>&1; then
+            echo "OK: port-forwards ready"
+            echo "  Log: {{.TEST_DIR}}/port-forward.log"
+            echo "  Stop: task integration:port-forward-stop"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "ERROR: port-forwards did not become ready after 30s"
+        echo "  Check log: {{.TEST_DIR}}/port-forward.log"
+        echo "  Verify pods are running: oc get pods -n {{.NAMESPACE}}"
+        cat "{{.TEST_DIR}}/port-forward.log" 2>/dev/null || true
+        exit 1
+
+  port-forward-stop:
+    desc: Stop all oc port-forward processes for the test namespace
+    cmds:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          echo "Quadlet publishes ports directly — nothing to stop"
+          exit 0
+        fi
+        pkill -f "oc port-forward.*-n {{.NAMESPACE}}" 2>/dev/null || true
+        echo "OK: port-forwards stopped"
+
+  test-pull:
+    desc: Run complyctl pull test suite
+    cmds:
+      - |
+        mkdir -p "{{.TEST_DIR}}"
+        venom run "{{.INTEGRATION_DIR}}/complyctl-pull.venom.yml" \
+          --lib-dir "{{.INTEGRATION_DIR}}/lib" \
+          --output-dir "{{.TEST_DIR}}" \
+          --var "HOME={{.HOME}}" \
+          -vv
+
+  test-pipeline:
+    desc: Run evidence pipeline test suite
+    cmds:
+      - |
+        if [ ! -f "{{.TEST_DIR}}/service-ca.crt" ]; then
+          echo "ERROR: service CA cert not found at {{.TEST_DIR}}/service-ca.crt"
+          echo "  Run: task integration:setup"
+          exit 1
+        fi
+        mkdir -p "{{.TEST_DIR}}"
+        CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt"
+        VENOM_ARGS=(
+          "{{.INTEGRATION_DIR}}/evidence-pipeline.venom.yml"
+          --lib-dir "{{.INTEGRATION_DIR}}/lib"
+          --output-dir "{{.TEST_DIR}}"
+          --var "ca_cert=${CA_CERT}"
+        )
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          # Quadlet certs have SAN DNS:localhost — connect directly
+          VENOM_ARGS+=(
+            --var "collector_host=localhost"
+            --var "loki_host=localhost"
+          )
+        fi
+        venom run "${VENOM_ARGS[@]}" -vv --stop-on-failure
+
+  check-stack:
+    desc: Verify the stack is reachable
+    internal: true
+    cmds:
+      - |
+        if curl -sf -k https://localhost:8088/eventreceiver/healthcheck >/dev/null 2>&1; then
+          echo "OK: collector webhook reachable (mode={{.MODE}})"
+        else
+          echo "ERROR: collector webhook not reachable at https://localhost:8088"
+          if [ "{{.MODE}}" = "quadlet" ]; then
+            echo "  Ensure the stack is running: task quadlet:start"
+          else
+            echo "  If using sk:run, start port-forwards first:"
+            echo "    task integration:port-forward"
+            echo "  Or use sk:dev which forwards automatically:"
+            echo "    task sk:dev"
+          fi
+          exit 1
+        fi
+
+  clean:
+    desc: Remove test artifacts and pulled bundles
+    cmds:
+      - rm -rf "{{.TEST_DIR}}"
+      - rm -rf "{{.HOME}}/.complytime/policies"
+      - 'echo "OK: test artifacts cleaned"'

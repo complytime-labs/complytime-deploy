@@ -1,0 +1,98 @@
+executor: post-evidence
+input:
+  control_id: ""
+  requirement_id: ""
+  catalog_id: "repo-branch-protection"
+  collector_host: ""
+  webhook_port: "8088"
+  ca_cert: ""
+  status: "success"
+  status_id: "1"
+  timeout: "30"
+  interval: "3"
+
+steps:
+  - type: exec
+    script: |
+      TIMESTAMP=$(date +%s)000
+      cat <<PAYLOAD
+      {
+        "activity_id": 0,
+        "activity_name": "",
+        "category_name": "Application Activity",
+        "category_uid": 6,
+        "class_name": "Scan Activity",
+        "class_uid": 6007,
+        "metadata": {
+          "log_provider": "ampel",
+          "product": {"name": "ampel", "vendor_name": "ampel", "version": "v0.1.0"},
+          "uid": "ampel-{{.input.catalog_id}}-{{.input.control_id}}",
+          "version": "v0.1.0"
+        },
+        "status": "{{.input.status}}",
+        "status_id": {{.input.status_id}},
+        "severity": "unknown",
+        "severity_id": 0,
+        "policy": {
+          "data": "{\"name\":\"AMPEL Policy\",\"description\":\"Policy from ampel-branch-protection bundle\",\"sources\":[{\"name\":\"{{.input.requirement_id}}\",\"config\":{\"include\":[\"{{.input.control_id}}\"]}}]}",
+          "desc": "Assessment for {{.input.control_id}}",
+          "name": "AMPEL Policy",
+          "uid": "{{.input.control_id}}"
+        },
+        "action": "observed",
+        "action_id": 3,
+        "scan": {"type_id": 0},
+        "time": ${TIMESTAMP},
+        "type_name": "",
+        "type_uid": 60070
+      }
+      PAYLOAD
+    assertions:
+      - result.code ShouldEqual 0
+    vars:
+      payload:
+        from: result.systemout
+
+  - type: exec
+    script: |
+      cat > /tmp/evidence_payload.json <<'ENDJSON'
+      {{.payload}}
+      ENDJSON
+      DEADLINE=$(($(date +%s) + {{.input.timeout}}))
+      ATTEMPT=0
+      while [ $(date +%s) -lt $DEADLINE ]; do
+        ATTEMPT=$((ATTEMPT + 1))
+        HTTP_CODE=$(curl -s -o /tmp/post_response.txt -w '%{http_code}' \
+          --http1.1 \
+          --cacert "{{.input.ca_cert}}" \
+          --resolve "{{.input.collector_host}}:{{.input.webhook_port}}:127.0.0.1" \
+          -X POST \
+          -H "Content-Type: application/json" \
+          -d @/tmp/evidence_payload.json \
+          "https://{{.input.collector_host}}:{{.input.webhook_port}}/eventsource/receiver" \
+          2>/tmp/post_err.txt) || HTTP_CODE="000"
+        if [ "$HTTP_CODE" = "200" ]; then
+          echo "HTTP_STATUS=200 (attempt $ATTEMPT)"
+          rm -f /tmp/post_response.txt /tmp/post_err.txt /tmp/evidence_payload.json
+          exit 0
+        fi
+        REMAINING=$((DEADLINE - $(date +%s)))
+        echo "  post-evidence attempt $ATTEMPT: HTTP $HTTP_CODE (${REMAINING}s remaining)" >&2
+        cat /tmp/post_err.txt 2>/dev/null >&2
+        sleep {{.input.interval}}
+      done
+      echo "HTTP_STATUS=${HTTP_CODE}"
+      echo "POST failed after $ATTEMPT attempts ({{.input.timeout}}s timeout)" >&2
+      cat /tmp/post_response.txt 2>/dev/null >&2
+      rm -f /tmp/post_response.txt /tmp/post_err.txt /tmp/evidence_payload.json
+      exit 1
+    assertions:
+      - result.code ShouldEqual 0
+      - result.systemout ShouldContainSubstring "HTTP_STATUS=200"
+    vars:
+      http_status:
+        from: result.systemout
+        regex: "HTTP_STATUS=(\\d+)"
+
+output:
+  status_code: "{{.http_status}}"
