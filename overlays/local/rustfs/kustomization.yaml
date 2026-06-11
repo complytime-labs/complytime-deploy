@@ -1,0 +1,8 @@
+# RustFS S3-compatible storage for local evidence export.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml
+  - pvc.yaml
+  - create-bucket-job.yaml

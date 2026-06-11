@@ -1,0 +1,86 @@
+apiVersion: skaffold/v4beta13
+kind: Config
+metadata:
+  name: complytime
+
+manifests:
+  kustomize:
+    paths: ["overlays/local"]
+
+deploy:
+  kubectl:
+    hooks:
+      before:
+        - host:
+            command: ["sh", "-c", "oc new-project complytime-dev 2>/dev/null || oc project complytime-dev"]
+        - host:
+            command: ["sh", "-c", "oc delete job rustfs-create-bucket -n complytime-dev 2>/dev/null || true"]
+
+portForward:
+  - resourceType: service
+    resourceName: grafana
+    port: 3000
+    localPort: 3000
+  - resourceType: service
+    resourceName: collector
+    port: 8088
+    localPort: 8088
+  - resourceType: service
+    resourceName: collector
+    port: 4318
+    localPort: 4318
+  - resourceType: service
+    resourceName: collector
+    port: 4317
+    localPort: 4317
+  - resourceType: service
+    resourceName: rustfs
+    port: 9001
+    localPort: 9001
+  - resourceType: service
+    resourceName: rustfs
+    port: 9000
+    localPort: 9000
+  - resourceType: service
+    resourceName: loki
+    port: 3100
+    localPort: 3100
+
+profiles:
+  - name: stage
+    manifests:
+      kustomize:
+        paths: ["overlays/stage"]
+    deploy:
+      kubectl:
+        hooks:
+          before:
+            - host:
+                command: ["sh", "-c", "oc login \"$OPENSHIFT_SERVER_STAGE\" --token=\"$OPENSHIFT_STAGE_TOKEN\""]
+            - host:
+                command: ["sh", "-c", "oc new-project complytime-stage 2>/dev/null || oc project complytime-stage"]
+            - host:
+                command: ["./scripts/apply-sealed-secrets.sh", "stage"]
+          after:
+            - host:
+                command: ["./scripts/post-deploy.sh", "stage"]
+    portForward: []
+
+  - name: production
+    manifests:
+      kustomize:
+        paths: ["overlays/production"]
+    deploy:
+      kubectl:
+        hooks:
+          before:
+            - host:
+                command: ["sh", "-c", "oc login \"$OPENSHIFT_SERVER_PRODUCTION\" --token=\"$OPENSHIFT_PRODUCTION_TOKEN\""]
+            - host:
+                command: ["sh", "-c", "oc new-project complytime-prod 2>/dev/null || oc project complytime-prod"]
+            - host:
+                command: ["./scripts/apply-sealed-secrets.sh", "production"]
+          after:
+            - host:
+                command: ["./scripts/post-deploy.sh", "production"]
+    portForward: []

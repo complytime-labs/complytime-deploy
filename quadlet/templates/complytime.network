@@ -1,0 +1,6 @@
+[Unit]
+Description=ComplyTime container network
+
+[Network]
+NetworkName=complytime
+DisableDNS=false

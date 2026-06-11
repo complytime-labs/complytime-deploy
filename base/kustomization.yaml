@@ -1,0 +1,10 @@
+# Root kustomization — aggregates all component manifests.
+# Each overlay (local, stage, production) references this as its base.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - service-ca-bundle
+  - collector
+  - loki
+  - grafana

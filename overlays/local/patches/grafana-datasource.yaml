@@ -1,0 +1,19 @@
+# Skips TLS certificate verification for Grafana→Loki connection.
+# CRC uses self-signed certs; verification is not meaningful locally.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+data:
+  ds.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: https://loki:3100
+        isDefault: true
+        jsonData:
+          tlsAuth: false
+          tlsAuthWithCACert: false
+          tlsSkipVerify: true

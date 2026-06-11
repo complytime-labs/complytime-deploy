@@ -1,0 +1,22 @@
+[Unit]
+Description=ComplyTime Collector - OpenTelemetry data pipeline
+Requires=complytime-network.service complytime-loki.service complytime-rustfs.service
+After=complytime-network.service complytime-loki.service complytime-rustfs.service
+
+[Container]
+ContainerName=complytime-collector
+Image=@@COLLECTOR_IMAGE@@
+Network=complytime.network
+PublishPort=4318:4318
+PublishPort=8088:8088
+Volume=@@RUNTIME@@/configs/collector-config.yaml:/etc/otel-collector.yaml:ro
+Volume=@@RUNTIME@@/certs/collector:/etc/tls:ro
+EnvironmentFile=@@RUNTIME@@/env/collector.env
+Exec=--config=/etc/otel-collector.yaml
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

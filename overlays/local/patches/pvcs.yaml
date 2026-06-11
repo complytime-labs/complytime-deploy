@@ -1,0 +1,17 @@
+# Patches PVC access mode to ReadWriteOnce for CRC.
+# CRC's hostpath provisioner does not support ReadWriteMany (EFS).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loki-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-storage
+spec:
+  accessModes:
+    - ReadWriteOnce

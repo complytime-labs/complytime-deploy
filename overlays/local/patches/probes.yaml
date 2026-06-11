@@ -1,0 +1,21 @@
+# Relaxes probe timing for CRC's constrained resources.
+# Loki's ring/ingester initialization takes longer on a single-node
+# cluster with limited CPU. Without this, kubelet kills the pod
+# before Loki finishes startup (503 from /ready during init).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+spec:
+  template:
+    spec:
+      containers:
+        - name: loki
+          readinessProbe:
+            initialDelaySeconds: 45
+            timeoutSeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            initialDelaySeconds: 90
+            timeoutSeconds: 5
+            periodSeconds: 30

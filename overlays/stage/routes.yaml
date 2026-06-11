@@ -1,0 +1,42 @@
+# OpenShift Routes for stage.
+# Reencrypt termination: router decrypts from internet, re-encrypts to pod.
+# HSTS enabled. TLS certs and destinationCACertificate are patched by deploy script
+# from the route-tls-certs SealedSecret after deployment.
+#
+# UPDATE: Set spec.host to your stage CNAME before deploying.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: collector-http
+  labels:
+    app: collector
+  annotations:
+    haproxy.router.openshift.io/hsts_header: "max-age=31536000;includeSubDomains"
+spec:
+  host: collector-stage.example.com
+  to:
+    kind: Service
+    name: collector
+    weight: 100
+  port:
+    targetPort: https-8088
+  tls:
+    termination: reencrypt
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: grafana
+  annotations:
+    haproxy.router.openshift.io/hsts_header: "max-age=31536000;includeSubDomains"
+spec:
+  host: grafana-stage.example.com
+  to:
+    kind: Service
+    name: grafana
+  port:
+    targetPort: https-3000
+  tls:
+    termination: reencrypt
+    insecureEdgeTerminationPolicy: Redirect

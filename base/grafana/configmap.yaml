@@ -1,0 +1,22 @@
+# Grafana datasource provisioning — connects Grafana to Loki for log queries.
+# The tlsCACert field is empty in base; local overlay skips TLS verification,
+# stage/production deploy pipelines inject the real Service CA cert post-deployment.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+data:
+  ds.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: https://loki:3100
+        isDefault: true
+        jsonData:
+          tlsAuth: false
+          tlsAuthWithCACert: true
+          tlsSkipVerify: false
+        secureJsonData:
+          tlsCACert: ""

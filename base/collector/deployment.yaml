@@ -1,0 +1,97 @@
+# Collector deployment — exposes webhook (8088), gRPC (4317), and HTTP (4318) ports.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: collector
+  template:
+    metadata:
+      labels:
+        app: collector
+    spec:
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+          - name: timeout
+            value: "2"
+          - name: attempts
+            value: "3"
+          - name: ndots
+            value: "1"
+      serviceAccountName: otel-collector
+      containers:
+      - name: collector
+        image: quay.io/complytime/beacon-collector:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        args: ["--config=/etc/otel-collector.yaml"]
+        ports:
+          - containerPort: 4318
+            name: http
+          - containerPort: 4317
+            name: grpc
+          - containerPort: 8088
+            name: https
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+        env:
+          - name: OIDC_ISSUER_URL
+            value: ""
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: aws-creds
+                key: AWS_ACCESS_KEY_ID
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: aws-creds
+                key: AWS_SECRET_ACCESS_KEY
+          - name: AWS_REGION
+            value: ""
+          - name: S3_BUCKETNAME
+            value: ""
+          - name: S3_OBJ_DIR
+            value: ""
+          - name: LOKI_HOST
+            value: "loki"
+          - name: S3_ENDPOINT
+            value: ""
+        volumeMounts:
+          - name: config
+            mountPath: /etc/otel-collector.yaml
+            subPath: otel-collector.yaml
+          - name: collector-tls
+            mountPath: /etc/tls
+            readOnly: true
+          - name: service-ca-bundle
+            mountPath: /etc/ssl/certs/service-ca.crt
+            subPath: service-ca.crt
+            readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: collector-config
+      - name: collector-tls
+        secret:
+          secretName: collector-tls
+      - name: service-ca-bundle
+        configMap:
+          name: service-ca-bundle

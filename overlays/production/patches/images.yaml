@@ -1,0 +1,12 @@
+# Production image tags — :latest (or pin to specific release tags).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+spec:
+  template:
+    spec:
+      containers:
+        - name: collector
+          image: quay.io/complytime/beacon-collector:latest

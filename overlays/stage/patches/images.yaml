@@ -1,0 +1,14 @@
+# Stage image tags — :unstable for pre-production validation.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+spec:
+  template:
+    spec:
+      containers:
+        - name: collector
+          # FIXME: Need to point to `unstable` when it exists
+          # https://github.com/complytime/complytime-collector-components/issues/282
+          image: quay.io/complytime/beacon-collector:test

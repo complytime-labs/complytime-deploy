@@ -1,0 +1,18 @@
+# EFS storage class for production — ReadWriteMany required for multi-pod access.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loki-storage
+spec:
+  storageClassName: aws-efs-tier-c4
+  accessModes:
+    - ReadWriteMany
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-storage
+spec:
+  storageClassName: aws-efs-tier-c4
+  accessModes:
+    - ReadWriteMany

@@ -1,0 +1,14 @@
+# Loki service — OpenShift auto-generates TLS cert via serving-cert annotation.
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: loki-tls
+spec:
+  selector:
+    app: loki
+  ports:
+    - name: http
+      port: 3100
+      targetPort: http

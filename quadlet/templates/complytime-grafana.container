@@ -1,0 +1,25 @@
+[Unit]
+Description=ComplyTime Grafana - compliance dashboard UI
+Requires=complytime-network.service complytime-loki.service
+After=complytime-network.service complytime-loki.service
+
+[Container]
+ContainerName=complytime-grafana
+Image=docker.io/grafana/grafana:11.6.0
+Network=complytime.network
+PublishPort=3000:3000
+Volume=complytime-grafana-storage.volume:/var/lib/grafana
+Volume=@@RUNTIME@@/configs/grafana-datasource.yaml:/etc/grafana/provisioning/datasources/ds.yaml:ro
+Volume=@@RUNTIME@@/certs/grafana:/etc/tls:ro
+Environment=GF_AUTH_ANONYMOUS_ENABLED=true
+Environment=GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+Environment=GF_SERVER_PROTOCOL=@@PROTOCOL@@
+Environment=GF_SERVER_CERT_FILE=/etc/tls/tls.crt
+Environment=GF_SERVER_CERT_KEY=/etc/tls/tls.key
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target
