@@ -1,0 +1,21 @@
+name: Scheduled Security
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: read
+  actions: none
+  id-token: none
+  security-events: none
+
+jobs:
+  call_reusable_scheduled:
+    name: Scheduled Scan
+    uses: complytime/org-infra/.github/workflows/reusable_scheduled.yml@2c193416adbc621a64021ace52bf57114d703888 # v0.3.1
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+      id-token: write

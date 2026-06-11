@@ -1,0 +1,26 @@
+# Checkov configuration for MegaLinter.
+# Skips partial Kustomize patches (false positives when scanned standalone)
+# and suppresses checks handled at the overlay level or by project policy.
+
+compact: true
+quiet: true
+
+skip-path:
+  - overlays/local/patches
+  - overlays/stage/patches
+  - overlays/production/patches
+  - overlays/local/rustfs
+
+skip-check:
+  # Namespace is set by Kustomize overlays, not in base manifests
+  - CKV_K8S_21
+  # Project policy: image digest pinning is not used; tags managed per-overlay
+  - CKV_K8S_43
+  # NetworkPolicy is managed per-overlay, not in base
+  - CKV2_K8S_6
+  # Image tags are set per-environment via overlay patches, not fixed in base
+  - CKV_K8S_14
+  # OTel collector and Grafana require secrets as env vars for configuration
+  - CKV_K8S_35
+  # Collector SA token automount required for OIDC-based authentication
+  - CKV_K8S_38

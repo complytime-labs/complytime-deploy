@@ -9,6 +9,4 @@ spec:
     spec:
       containers:
         - name: collector
-          # FIXME: Need to point to `unstable` when it exists
-          # https://github.com/complytime/complytime-collector-components/issues/282
-          image: quay.io/complytime/beacon-collector:test
+          image: quay.io/complytime/beacon-collector:unstable

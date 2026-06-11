@@ -1,0 +1,16 @@
+EXTENDS: .mega-linter.shared.yml
+# Repo-specific overrides for complytime-deploy.
+# The megalint-config runner mounts the shared config as .mega-linter.shared.yml
+# and uses this file as the entry point.
+
+ADDITIONAL_EXCLUDED_DIRECTORIES:
+  - quadlet/runtime
+  - .test-output
+  - megalinter-reports
+
+# jscpd: Exclude Kustomize overlays and OTel Collector configs from
+# copy-paste detection. Duplication between overlays is intentional —
+# each environment needs self-contained patches and monolithic collector
+# configs (OTel Collector YAML has no import/include mechanism).
+COPYPASTE_JSCPD_ARGUMENTS: >-
+  --ignore "overlays/*/patches/**,overlays/*/configs/**,overlays/*/sealed-secrets/**,base/collector/otel-collector.yaml,scripts/*"

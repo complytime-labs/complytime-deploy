@@ -1,9 +1,9 @@
-version: '3'
+version: "3"
 
 vars:
   COMPLYCTL_VERSION: "v1.0.0-alpha.0"
   VENOM_VERSION: "v1.3.0"
-  TOOLS_DIR: '{{.HOME}}/.local/bin'
+  TOOLS_DIR: "{{.HOME}}/.local/bin"
   TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'
   NAMESPACE: "complytime-dev"
   INTEGRATION_DIR: "tests/integration"
@@ -95,7 +95,7 @@ tasks:
     cmds:
       - mkdir -p "{{.TOOLS_DIR}}"
       - curl -fL -o /tmp/complyctl.tar.gz
-          "https://github.com/complytime/complyctl/releases/download/{{.COMPLYCTL_VERSION}}/complyctl_linux_x86_64.tar.gz"
+        "https://github.com/complytime/complyctl/releases/download/{{.COMPLYCTL_VERSION}}/complyctl_linux_x86_64.tar.gz"
       - |
         COMPLYCTL_SHA=$(grep "complyctl/{{.COMPLYCTL_VERSION}}/linux/x86_64" {{.CHECKSUMS_FILE}} | cut -d: -f2 | tr -d ' ')
         echo "${COMPLYCTL_SHA}  /tmp/complyctl.tar.gz" | sha256sum -c -
@@ -112,7 +112,7 @@ tasks:
     cmds:
       - mkdir -p "{{.TOOLS_DIR}}"
       - curl -fL -o /tmp/venom.linux-amd64
-          "https://github.com/ovh/venom/releases/download/{{.VENOM_VERSION}}/venom.linux-amd64"
+        "https://github.com/ovh/venom/releases/download/{{.VENOM_VERSION}}/venom.linux-amd64"
       - |
         VENOM_SHA=$(grep "venom/{{.VENOM_VERSION}}/linux/x86_64" {{.CHECKSUMS_FILE}} | cut -d: -f2 | tr -d ' ')
         echo "${VENOM_SHA}  /tmp/venom.linux-amd64" | sha256sum -c -

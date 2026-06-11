@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 vars:
   CRC_CPUS: '{{.CRC_CPUS | default "6"}}'

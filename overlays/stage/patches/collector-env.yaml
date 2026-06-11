@@ -8,27 +8,27 @@ spec:
   template:
     spec:
       containers:
-      - name: collector
-        env:
-          - name: OIDC_ISSUER_URL
-            value: ""
-          - name: LOKI_HOST
-            value: "loki"
-          - name: S3_ENDPOINT
-            value: ""
-          - name: S3_BUCKETNAME
-            value: "sw-s3-hyperproof"
-          - name: S3_OBJ_DIR
-            value: "test"
-          - name: AWS_REGION
-            value: "us-east-2"
-          - name: AWS_ACCESS_KEY_ID
-            valueFrom:
-              secretKeyRef:
-                name: aws-creds
-                key: AWS_ACCESS_KEY_ID
-          - name: AWS_SECRET_ACCESS_KEY
-            valueFrom:
-              secretKeyRef:
-                name: aws-creds
-                key: AWS_SECRET_ACCESS_KEY
+        - name: collector
+          env:
+            - name: OIDC_ISSUER_URL
+              value: ""
+            - name: LOKI_HOST
+              value: "loki"
+            - name: S3_ENDPOINT
+              value: ""
+            - name: S3_BUCKETNAME
+              value: "sw-s3-hyperproof"
+            - name: S3_OBJ_DIR
+              value: "test"
+            - name: AWS_REGION
+              value: "us-east-2"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-creds
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-creds
+                  key: AWS_SECRET_ACCESS_KEY

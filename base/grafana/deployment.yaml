@@ -17,6 +17,9 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       dnsPolicy: ClusterFirst
@@ -29,64 +32,73 @@ spec:
           - name: ndots
             value: "1"
       containers:
-      - name: grafana
-        image: docker.io/grafana/grafana:11.6.0
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
-        ports:
-          - containerPort: 3000
-            name: https
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
-        env:
-          - name: GF_AUTH_ANONYMOUS_ENABLED
-            value: "false"
-          - name: GF_SERVER_PROTOCOL
-            value: "https"
-          - name: GF_SERVER_CERT_FILE
-            value: "/etc/tls/tls.crt"
-          - name: GF_SERVER_CERT_KEY
-            value: "/etc/tls/tls.key"
-        volumeMounts:
-          - name: datasources
-            mountPath: /etc/grafana/provisioning/datasources/ds.yaml
-            subPath: ds.yaml
-          - name: grafana-tls
-            mountPath: /etc/tls
-            readOnly: true
-          - name: grafana-storage
-            mountPath: /var/lib/grafana
-        readinessProbe:
-          httpGet:
-            path: /api/health
-            port: 3000
-            scheme: HTTPS
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 5
-        livenessProbe:
-          httpGet:
-            path: /api/health
-            port: 3000
-            scheme: HTTPS
-          initialDelaySeconds: 30
-          periodSeconds: 30
-          timeoutSeconds: 5
+        - name: grafana
+          image: docker.io/grafana/grafana:11.6.0
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: 3000
+              name: https
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          env:
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "false"
+            - name: GF_SERVER_PROTOCOL
+              value: "https"
+            - name: GF_SERVER_CERT_FILE
+              value: "/etc/tls/tls.crt"
+            - name: GF_SERVER_CERT_KEY
+              value: "/etc/tls/tls.key"
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources/ds.yaml
+              subPath: ds.yaml
+            - name: grafana-tls
+              mountPath: /etc/tls
+              readOnly: true
+            - name: grafana-storage
+              mountPath: /var/lib/grafana
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
       volumes:
-      - name: datasources
-        configMap:
-          name: grafana-datasources
-      - name: grafana-tls
-        secret:
-          secretName: grafana-tls
-      - name: grafana-storage
-        persistentVolumeClaim:
-          claimName: grafana-storage
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: grafana-tls
+          secret:
+            secretName: grafana-tls
+        - name: grafana-storage
+          persistentVolumeClaim:
+            claimName: grafana-storage
+        - name: tmp
+          emptyDir: {}

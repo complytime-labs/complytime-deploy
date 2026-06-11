@@ -1,0 +1,61 @@
+# Trivy false positive suppressions for complytime-deploy.
+#
+# This project uses Kustomize with base manifests and overlay patches.
+# Trivy scans each YAML file standalone, but overlay patches are partial
+# strategic-merge documents — security controls live in the base manifests
+# and are merged at build time. All KSV rules below fire on partial patches
+# that lack fields already present in the base.
+#
+# The validate job in ci_validate.yml scans the merged output
+# via task sk:render-all -> Trivy on .rendered-manifests/. These
+# suppressions remain for the ci_security.yml Trivy workflow which
+# still scans raw files.
+
+# Namespace is set by Kustomize overlay (kustomization.yaml sets namespace
+# per environment). Base manifests intentionally omit metadata.namespace
+# so kustomize can inject it at build time.
+KSV-0110
+
+# Images from quay.io/complytime, docker.io/grafana, and docker.io/rustfs
+# are the project's own images or well-known FOSS images. These registries
+# are trusted for this project.
+KSV-0125
+
+# Image tags (:latest, :unstable) are intentional per overlay design.
+# Production uses :latest, stage uses :unstable. Digest pinning is
+# deliberately not used (see CKV_K8S_43 inline suppressions).
+KSV-0013
+
+# --- Kustomize partial-patch false positives ---
+# Base deployments set allowPrivilegeEscalation: false, but patches that
+# only override env vars or resources don't repeat the field.
+KSV-0001
+
+# Base deployments drop ALL capabilities. Patches don't repeat this.
+KSV-0003
+KSV-0004
+KSV-0106
+
+# Resource limits and requests are set in base or the resources.yaml patch.
+# Other patches (env, images, probes) don't repeat resource fields.
+KSV-0011
+KSV-0015
+KSV-0016
+KSV-0018
+
+# Base deployments set runAsNonRoot: true. Patches don't repeat this.
+KSV-0012
+
+# Base deployments set readOnlyRootFilesystem: true. Patches don't repeat this.
+KSV-0014
+
+# Base deployments set runAsUser/runAsGroup > 10000. Patches don't repeat this.
+KSV-0020
+KSV-0021
+
+# Base deployments set seccompProfile to RuntimeDefault. Patches don't repeat this.
+KSV-0030
+KSV-0104
+
+# Base deployments have full securityContext. Patches don't repeat this.
+KSV-0118
