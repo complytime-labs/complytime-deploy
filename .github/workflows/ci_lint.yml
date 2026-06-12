@@ -51,4 +51,3 @@ jobs:
         with:
           sarif_file: ${{ steps.megalinter.outputs.sarif-file }}
           category: megalinter
-
