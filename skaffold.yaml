@@ -16,14 +16,14 @@ deploy:
               [
                 "sh",
                 "-c",
-                "oc new-project complytime-dev 2>/dev/null || oc project complytime-dev",
+                'oc new-project "${DEPLOY_NAMESPACE:-complytime-dev}" 2>/dev/null || oc project "${DEPLOY_NAMESPACE:-complytime-dev}"',
               ]
         - host:
             command:
               [
                 "sh",
                 "-c",
-                "oc delete job rustfs-create-bucket -n complytime-dev 2>/dev/null || true",
+                'oc delete job rustfs-create-bucket -n "${DEPLOY_NAMESPACE:-complytime-dev}" 2>/dev/null || true',
               ]
 
 portForward:

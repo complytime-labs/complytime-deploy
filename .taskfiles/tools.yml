@@ -1,0 +1,189 @@
+version: "3"
+
+vars:
+  TOOLS_DIR: '{{.TOOLS_DIR | default (printf "%s/.local/bin" .HOME)}}'
+  CHECKSUMS_FILE: "{{.ROOT_DIR}}/.tool_checksums"
+  TASK_VERSION: "v3.51.1"
+  OC_VERSION: "4.22.0"
+  KUSTOMIZE_VERSION: "v5.6.0"
+  SKAFFOLD_VERSION: "v2.18.3"
+  CHECKOV_VERSION: "3.2.529"
+  TRIVY_VERSION: "0.71.0"
+  YQ_VERSION: "v4.44.6"
+  COMPLYCTL_VERSION: "v1.0.0-alpha.0"
+  VENOM_VERSION: "v1.3.0"
+  KUBESEAL_VERSION: "v0.24.1"
+
+tasks:
+  default:
+    silent: true
+    cmd: |
+      task --list 2>/dev/null
+
+  install-task:
+    desc: "Install task (taskfile.dev) with SHA256 verification"
+    status:
+      - command -v task
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fsSL -o /tmp/task.tar.gz
+        "https://github.com/go-task/task/releases/download/{{.TASK_VERSION}}/task_linux_amd64.tar.gz"
+      - |
+        EXPECTED=$(grep "task/{{.TASK_VERSION}}/linux/amd64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/task.tar.gz" | sha256sum -c -
+      - tar -xzf /tmp/task.tar.gz -C /tmp task
+      - install /tmp/task "{{.TOOLS_DIR}}/task"
+      - rm -f /tmp/task.tar.gz /tmp/task
+      - task --version
+
+  install-oc:
+    desc: "Install oc (OpenShift CLI) with SHA256 verification"
+    status:
+      - command -v oc
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fsSL -o /tmp/oc.tar.gz
+        "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.22/openshift-client-linux-{{.OC_VERSION}}.tar.gz"
+      - |
+        EXPECTED=$(grep "oc/v{{.OC_VERSION}}/linux/amd64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/oc.tar.gz" | sha256sum -c -
+      - tar -xzf /tmp/oc.tar.gz -C /tmp oc
+      - install /tmp/oc "{{.TOOLS_DIR}}/oc"
+      - rm -f /tmp/oc.tar.gz /tmp/oc /tmp/README.md
+      - oc version --client
+
+  install-kustomize:
+    desc: "Install kustomize with SHA256 verification"
+    status:
+      - command -v kustomize
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fsSL -o /tmp/kustomize.tar.gz
+        "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F{{.KUSTOMIZE_VERSION}}/kustomize_{{.KUSTOMIZE_VERSION}}_linux_amd64.tar.gz"
+      - |
+        EXPECTED=$(grep "kustomize/{{.KUSTOMIZE_VERSION}}/linux/amd64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/kustomize.tar.gz" | sha256sum -c -
+      - tar -xzf /tmp/kustomize.tar.gz -C /tmp kustomize
+      - install /tmp/kustomize "{{.TOOLS_DIR}}/kustomize"
+      - rm -f /tmp/kustomize.tar.gz /tmp/kustomize
+      - kustomize version
+
+  install-skaffold:
+    desc: "Install skaffold with SHA256 verification"
+    status:
+      - command -v skaffold
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fsSL -o /tmp/skaffold
+        "https://storage.googleapis.com/skaffold/releases/{{.SKAFFOLD_VERSION}}/skaffold-linux-amd64"
+      - |
+        EXPECTED=$(grep "skaffold/{{.SKAFFOLD_VERSION}}/linux/amd64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/skaffold" | sha256sum -c -
+      - install /tmp/skaffold "{{.TOOLS_DIR}}/skaffold"
+      - rm -f /tmp/skaffold
+      - skaffold version
+
+  install-checkov:
+    desc: "Install checkov with SHA256 verification"
+    status:
+      - command -v checkov
+    cmds:
+      - pip download -q --no-deps -d /tmp "checkov=={{.CHECKOV_VERSION}}"
+      - |
+        EXPECTED=$(grep "checkov/v{{.CHECKOV_VERSION}}/any/any" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/checkov-{{.CHECKOV_VERSION}}-py3-none-any.whl" | sha256sum -c -
+      - pip install -q "/tmp/checkov-{{.CHECKOV_VERSION}}-py3-none-any.whl"
+      - rm -f "/tmp/checkov-{{.CHECKOV_VERSION}}-py3-none-any.whl"
+      - checkov --version
+
+  install-trivy:
+    desc: "Install trivy with SHA256 verification"
+    status:
+      - command -v trivy
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fsSL -o /tmp/trivy.tar.gz
+        "https://github.com/aquasecurity/trivy/releases/download/v{{.TRIVY_VERSION}}/trivy_{{.TRIVY_VERSION}}_Linux-64bit.tar.gz"
+      - |
+        EXPECTED=$(grep "trivy/v{{.TRIVY_VERSION}}/linux/amd64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/trivy.tar.gz" | sha256sum -c -
+      - tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
+      - install /tmp/trivy "{{.TOOLS_DIR}}/trivy"
+      - rm -f /tmp/trivy.tar.gz /tmp/trivy
+      - trivy --version
+
+  install-yq:
+    desc: "Install yq with SHA256 verification"
+    status:
+      - command -v yq
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fsSL -o /tmp/yq
+        "https://github.com/mikefarah/yq/releases/download/{{.YQ_VERSION}}/yq_linux_amd64"
+      - |
+        EXPECTED=$(grep "yq/{{.YQ_VERSION}}/linux/amd64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/yq" | sha256sum -c -
+      - install /tmp/yq "{{.TOOLS_DIR}}/yq"
+      - rm -f /tmp/yq
+      - yq --version
+
+  install-complyctl:
+    desc: "Install complyctl with SHA256 verification"
+    status:
+      - command -v complyctl
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fsSL -o /tmp/complyctl.tar.gz
+        "https://github.com/complytime/complyctl/releases/download/{{.COMPLYCTL_VERSION}}/complyctl_linux_x86_64.tar.gz"
+      - |
+        EXPECTED=$(grep "complyctl/{{.COMPLYCTL_VERSION}}/linux/x86_64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/complyctl.tar.gz" | sha256sum -c -
+      - tar -xzf /tmp/complyctl.tar.gz -C /tmp
+      - install /tmp/complyctl "{{.TOOLS_DIR}}/complyctl"
+      - rm -rf /tmp/complyctl.tar.gz /tmp/complyctl /tmp/LICENSE /tmp/README.md /tmp/openscap-plugin
+      - complyctl version
+
+  install-venom:
+    desc: "Install venom with SHA256 verification"
+    status:
+      - command -v venom
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fsSL -o /tmp/venom.linux-amd64
+        "https://github.com/ovh/venom/releases/download/{{.VENOM_VERSION}}/venom.linux-amd64"
+      - |
+        EXPECTED=$(grep "venom/{{.VENOM_VERSION}}/linux/x86_64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/venom.linux-amd64" | sha256sum -c -
+      - install /tmp/venom.linux-amd64 "{{.TOOLS_DIR}}/venom"
+      - rm -f /tmp/venom.linux-amd64
+      - venom version
+
+  install-kubeseal:
+    desc: "Install kubeseal with SHA256 verification"
+    status:
+      - command -v kubeseal
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fsSL -o /tmp/kubeseal.tar.gz
+        "https://github.com/bitnami-labs/sealed-secrets/releases/download/{{.KUBESEAL_VERSION}}/kubeseal-{{.KUBESEAL_VERSION | trimPrefix "v"}}-linux-amd64.tar.gz"
+      - |
+        EXPECTED=$(grep "kubeseal/{{.KUBESEAL_VERSION}}/linux/amd64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/kubeseal.tar.gz" | sha256sum -c -
+      - tar -xzf /tmp/kubeseal.tar.gz -C /tmp kubeseal
+      - install /tmp/kubeseal "{{.TOOLS_DIR}}/kubeseal"
+      - rm -f /tmp/kubeseal.tar.gz /tmp/kubeseal
+      - kubeseal --version
+
+  install-deploy:
+    desc: "Install all deployment tools (oc, kustomize, skaffold, kubeseal)"
+    cmds:
+      - task: install-oc
+      - task: install-kustomize
+      - task: install-skaffold
+      - task: install-kubeseal
+
+  install-scan:
+    desc: "Install all scanning tools (checkov, trivy)"
+    cmds:
+      - task: install-checkov
+      - task: install-trivy

@@ -1,13 +1,14 @@
 version: "3"
 
 vars:
-  COMPLYCTL_VERSION: "v1.0.0-alpha.0"
-  VENOM_VERSION: "v1.3.0"
-  TOOLS_DIR: "{{.HOME}}/.local/bin"
   TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'
-  NAMESPACE: "complytime-dev"
+  # _NS is the effective namespace for integration tests. Derived from the
+  # root-level NAMESPACE var (which stays empty by default) with a fallback
+  # to DEFAULT_NAMESPACE.  Named with underscore prefix to avoid leaking
+  # into sibling includes (Taskfile vars are globally visible across includes).
+  _NS: "{{.NAMESPACE | default .DEFAULT_NAMESPACE}}"
+  BASE: '{{.BASE | default "local"}}'
   INTEGRATION_DIR: "tests/integration"
-  CHECKSUMS_FILE: ".tool_checksums"
   # Deployment mode: crc (OpenShift Local) or quadlet (Podman Quadlet)
   MODE: '{{.MODE | default "crc"}}'
   QUADLET_RUNTIME: "quadlet/runtime"
@@ -27,8 +28,9 @@ tasks:
     desc: Install tools, deploy stack if needed, extract CA, start port-forwards, pull OCI bundle
     cmds:
       - task: check-prereqs
-      - task: install-complyctl
-      - task: install-venom
+      - task: :tools:install-complyctl
+      - task: :tools:install-venom
+      - task: _ensure-sealed-secrets
       - task: deploy-if-needed
       - task: _ensure-bucket
       - task: extract-ca
@@ -44,7 +46,7 @@ tasks:
           systemctl --user list-units 'complytime-*.service' --no-pager --plain \
             | grep -q 'running'
         else
-          oc get pods -n "{{.NAMESPACE}}" 2>/dev/null | grep -q Running
+          oc get pods -n "{{._NS}}" 2>/dev/null | grep -q Running
         fi
     cmds:
       - |
@@ -52,8 +54,14 @@ tasks:
           echo "Quadlet stack not running — start it with: task quadlet:start"
           exit 1
         fi
-        echo "Stack not deployed — deploying..."
+        echo "Stack not deployed — deploying to namespace {{._NS}}..."
+      - |
+        if [ "{{._NS}}" != "{{.DEFAULT_NAMESPACE}}" ]; then
+          task sk:_generate-overlay NAMESPACE="{{._NS}}" BASE="{{.BASE}}"
+        fi
       - task: :sk:_deploy
+        vars:
+          NAMESPACE: "{{if ne ._NS .DEFAULT_NAMESPACE}}{{._NS}}{{end}}"
 
   _ensure-bucket:
     desc: Create S3 bucket with anonymous read access
@@ -77,7 +85,7 @@ tasks:
       - |
         REQUIRED="jq yq curl"
         if [ "{{.MODE}}" = "crc" ]; then
-          REQUIRED="$REQUIRED oc"
+          REQUIRED="$REQUIRED oc kubeseal openssl"
         fi
         for cmd in $REQUIRED; do
           if ! command -v "$cmd" &>/dev/null; then
@@ -87,38 +95,16 @@ tasks:
         done
         echo "OK: prerequisites available (mode={{.MODE}})"
 
-  install-complyctl:
-    desc: Install complyctl with SHA256 verification
-    status:
-      - test -x {{.TOOLS_DIR}}/complyctl
-      - complyctl version 2>&1 | grep -q "{{.COMPLYCTL_VERSION}}"
+  _ensure-sealed-secrets:
+    desc: Ensure SealedSecrets with dev values exist in the test namespace
+    internal: true
     cmds:
-      - mkdir -p "{{.TOOLS_DIR}}"
-      - curl -fL -o /tmp/complyctl.tar.gz
-        "https://github.com/complytime/complyctl/releases/download/{{.COMPLYCTL_VERSION}}/complyctl_linux_x86_64.tar.gz"
       - |
-        COMPLYCTL_SHA=$(grep "complyctl/{{.COMPLYCTL_VERSION}}/linux/x86_64" {{.CHECKSUMS_FILE}} | cut -d: -f2 | tr -d ' ')
-        echo "${COMPLYCTL_SHA}  /tmp/complyctl.tar.gz" | sha256sum -c -
-      - tar -xzf /tmp/complyctl.tar.gz -C /tmp
-      - install /tmp/complyctl "{{.TOOLS_DIR}}/complyctl"
-      - rm -rf /tmp/complyctl.tar.gz /tmp/complyctl /tmp/LICENSE /tmp/README.md /tmp/openscap-plugin
-      - complyctl version
-
-  install-venom:
-    desc: Install venom with SHA256 verification
-    status:
-      - test -x {{.TOOLS_DIR}}/venom
-      - venom version 2>&1 | grep -q "{{.VENOM_VERSION}}"
-    cmds:
-      - mkdir -p "{{.TOOLS_DIR}}"
-      - curl -fL -o /tmp/venom.linux-amd64
-        "https://github.com/ovh/venom/releases/download/{{.VENOM_VERSION}}/venom.linux-amd64"
-      - |
-        VENOM_SHA=$(grep "venom/{{.VENOM_VERSION}}/linux/x86_64" {{.CHECKSUMS_FILE}} | cut -d: -f2 | tr -d ' ')
-        echo "${VENOM_SHA}  /tmp/venom.linux-amd64" | sha256sum -c -
-      - install /tmp/venom.linux-amd64 "{{.TOOLS_DIR}}/venom"
-      - rm -f /tmp/venom.linux-amd64
-      - venom version
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          echo "Quadlet mode — SealedSecrets not applicable"
+          exit 0
+        fi
+        ./scripts/ensure-sealed-secrets.sh "{{._NS}}"
 
   extract-ca:
     desc: Extract CA certificate for TLS verification
@@ -146,9 +132,9 @@ tasks:
           cp "$CA_SRC" "{{.TEST_DIR}}/service-ca.crt"
           echo "OK: Quadlet CA cert copied to {{.TEST_DIR}}/service-ca.crt"
         else
-          echo "Extracting service CA from namespace {{.NAMESPACE}}..."
+          echo "Extracting service CA from namespace {{._NS}}..."
           for i in $(seq 1 12); do
-            CA=$(oc get configmap service-ca-bundle -n "{{.NAMESPACE}}" \
+            CA=$(oc get configmap service-ca-bundle -n "{{._NS}}" \
               -o jsonpath='{.data.service-ca\.crt}' 2>/dev/null) || true
             if [ -n "$CA" ]; then
               echo "$CA" > "{{.TEST_DIR}}/service-ca.crt"
@@ -219,8 +205,14 @@ tasks:
           exit 1
         fi
 
-        # Kill any stale port-forwards from a previous run
-        pkill -f "oc port-forward.*-n {{.NAMESPACE}}" 2>/dev/null || true
+        # Kill any stale port-forwards from a previous run (any namespace).
+        # A previous run with a different NAMESPACE would still hold the
+        # same local ports, causing TLS SAN mismatches.
+        for FWD in "svc/collector 8088:8088" "svc/collector 4318:4318" "svc/collector 4317:4317" \
+                   "svc/loki 3100:3100" "svc/rustfs 9000:9000" "svc/grafana 3000:3000"; do
+          LOCAL_PORT=$(echo "$FWD" | cut -d' ' -f2 | cut -d: -f1)
+          pkill -f "oc port-forward.*${LOCAL_PORT}:" 2>/dev/null || true
+        done
         sleep 1
         mkdir -p "{{.TEST_DIR}}"
 
@@ -229,12 +221,7 @@ tasks:
           SVC=$(echo "$FWD" | cut -d' ' -f1)
           PORTS=$(echo "$FWD" | cut -d' ' -f2)
           LOCAL_PORT=$(echo "$PORTS" | cut -d: -f1)
-          # Check if port is already forwarded by a previous oc port-forward
-          if pgrep -f "oc port-forward.*${LOCAL_PORT}:.*-n {{.NAMESPACE}}" >/dev/null 2>&1; then
-            echo "OK: port $LOCAL_PORT already forwarded"
-            continue
-          fi
-          nohup oc port-forward "$SVC" "$PORTS" -n "{{.NAMESPACE}}" \
+          nohup oc port-forward "$SVC" "$PORTS" -n "{{._NS}}" \
             >> "{{.TEST_DIR}}/port-forward.log" 2>&1 &
           echo "  Forwarding $SVC $PORTS (pid $!)"
         done
@@ -252,7 +239,7 @@ tasks:
         done
         echo "ERROR: port-forwards did not become ready after 30s"
         echo "  Check log: {{.TEST_DIR}}/port-forward.log"
-        echo "  Verify pods are running: oc get pods -n {{.NAMESPACE}}"
+        echo "  Verify pods are running: oc get pods -n {{._NS}}"
         cat "{{.TEST_DIR}}/port-forward.log" 2>/dev/null || true
         exit 1
 
@@ -264,7 +251,13 @@ tasks:
           echo "Quadlet publishes ports directly — nothing to stop"
           exit 0
         fi
-        pkill -f "oc port-forward.*-n {{.NAMESPACE}}" 2>/dev/null || true
+        # Kill port-forwards on all integration ports regardless of namespace,
+        # so switching NAMESPACE between runs doesn't leave stale forwards.
+        for FWD in "svc/collector 8088:8088" "svc/collector 4318:4318" "svc/collector 4317:4317" \
+                   "svc/loki 3100:3100" "svc/rustfs 9000:9000" "svc/grafana 3000:3000"; do
+          LOCAL_PORT=$(echo "$FWD" | cut -d' ' -f2 | cut -d: -f1)
+          pkill -f "oc port-forward.*${LOCAL_PORT}:" 2>/dev/null || true
+        done
         echo "OK: port-forwards stopped"
 
   test-pull:
@@ -300,6 +293,12 @@ tasks:
           VENOM_ARGS+=(
             --var "collector_host=localhost"
             --var "loki_host=localhost"
+          )
+        else
+          # CRC: use namespace-qualified service hostnames to match cert SANs
+          VENOM_ARGS+=(
+            --var "collector_host=collector.{{._NS}}.svc"
+            --var "loki_host=loki.{{._NS}}.svc"
           )
         fi
         venom run "${VENOM_ARGS[@]}" -vv --stop-on-failure

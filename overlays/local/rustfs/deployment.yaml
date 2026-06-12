@@ -1,6 +1,6 @@
 # RustFS — S3-compatible object storage for local development (Apache 2.0).
 # Same S3 API, same ports (9000/9001).
-# Image UID 10001 is overridden by OpenShift's namespace UID range via SCC.
+# Runs as arbitrary UID assigned by OpenShift's restricted-v2 SCC.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,9 +18,6 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 10001
-        runAsGroup: 10001
-        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -31,8 +28,6 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 10001
-            runAsGroup: 10001
             capabilities:
               drop:
                 - ALL

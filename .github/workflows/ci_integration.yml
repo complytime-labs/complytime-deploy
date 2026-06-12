@@ -30,20 +30,15 @@ jobs:
       - name: Install Task
         uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
 
+      - name: Add tools to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Install prerequisites
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq jq openssl podman
-          # yq — install from GitHub releases (not available in apt)
-          YQ_VERSION="v4.44.6"
-          YQ_SHA256="0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598" # DevSkim: ignore DS173237 - SHA256 checksum for yq binary integrity verification, not a secret
-          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
-            -o /tmp/yq
-          echo "${YQ_SHA256}  /tmp/yq" | sha256sum -c -
-          sudo mv /tmp/yq /usr/local/bin/yq
-          sudo chmod +x /usr/local/bin/yq
-          yq --version
+          task tools:install-yq
 
       - name: Bootstrap systemd user session
         run: |
@@ -96,4 +91,3 @@ jobs:
       - name: Teardown Quadlet stack
         if: always()
         run: task quadlet:teardown --yes
-

@@ -203,6 +203,31 @@ task sk:run -- stage         # stage
 task sk:run -- production    # production
 ```
 
+### Custom Namespace Deployment
+
+Deploy the local (or any) overlay configuration to a different OpenShift namespace for testing:
+
+```bash
+# Deploy local config to a custom namespace
+task sk:run NAMESPACE=my-test
+
+# Deploy stage config to a custom namespace
+task sk:run NAMESPACE=my-test BASE=stage
+
+# Render manifests for a custom namespace (preview without deploying)
+task sk:render NAMESPACE=my-test
+
+# Tear down custom deployment and clean up generated overlay
+task sk:delete NAMESPACE=my-test
+```
+
+This generates a thin Kustomize overlay at `overlays/custom-<NAMESPACE>/` that inherits from the base overlay (default: `local`) and overrides only the namespace. The generated overlay is gitignored and cleaned up by `sk:delete`.
+
+**Notes:**
+- Custom deploys generate a per-namespace Skaffold config that runs the full pipeline (sealed-secrets, post-deploy hooks, status checking)
+- `NAMESPACE` and profile selection (`-- stage`) are mutually exclusive
+- `sk:dev` does not support `NAMESPACE` — use `sk:run` for custom namespace deploys
+
 For stage/production, you must first:
 1. Install the SealedSecrets controller on the cluster: `task crc:sealed-secrets` (see [Prerequisites](#openshift-cluster-requirements))
 2. Update route hostnames in `overlays/<env>/routes.yaml`
@@ -383,6 +408,9 @@ task sk:render -- stage       # Render stage manifests to stdout
 task sk:validate              # Validate all profiles render cleanly
 task sk:status                # Show pod status
 task sk:delete                # Delete deployed resources
+task sk:run NAMESPACE=foo        # Deploy to custom namespace
+task sk:render NAMESPACE=foo     # Render manifests for custom namespace
+task sk:delete NAMESPACE=foo     # Tear down custom namespace deploy
 
 # Podman Quadlet (systemctl --user)
 task quadlet:setup            # Generate certs, install quadlet units
@@ -390,6 +418,13 @@ task quadlet:start            # Start all services
 task quadlet:status           # Show service status
 task quadlet:logs -- collector  # Stream logs via journalctl
 task quadlet:teardown         # Full cleanup
+
+# Integration Tests
+task integration:test                    # Run all tests (CRC mode)
+task integration:test MODE=quadlet       # Run all tests (Quadlet mode)
+task integration:test NAMESPACE=foo      # Run tests in custom namespace (CRC only)
+task integration:setup                   # Install tools + deploy + port-forward
+task integration:clean                   # Remove test artifacts
 ```
 
 ### Testing Local Images

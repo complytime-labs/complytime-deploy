@@ -58,6 +58,26 @@ tasks:
             echo 'not found'
           fi
         ignore_error: true
+      - silent: true
+        cmd: |
+          if ! oc whoami &>/dev/null; then
+            exit 0
+          fi
+          echo ''
+          echo 'Deployed projects:'
+          PROJECTS=$(oc get projects -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null \
+            | grep -v '^openshift' | grep -v '^kube-' | grep -v '^default$' \
+            | grep -v '^hostpath-provisioner$' | grep -v '^metallb-system$')
+          if [ -z "$PROJECTS" ]; then
+            echo '  (none)'
+          else
+            for P in $PROJECTS; do
+              PODS=$(oc get pods -n "$P" --no-headers 2>/dev/null | wc -l)
+              RUNNING=$(oc get pods -n "$P" --no-headers --field-selector=status.phase=Running 2>/dev/null | wc -l)
+              printf '  %-30s %d/%d pods running\n' "$P" "$RUNNING" "$PODS"
+            done
+          fi
+        ignore_error: true
 
   login:
     desc: Log in to the CRC cluster (opens browser)

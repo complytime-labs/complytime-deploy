@@ -3,5 +3,6 @@ quadlet/runtime/
 .test-output/
 .rendered-manifests/
 docs/superpowers/
+overlays/custom-*/
 # complyctl writes log/state here when run from tests/integration/
 tests/integration/.complytime/

@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-OVERLAY="${1:?Usage: $0 <overlay> (e.g., stage, production)}"
-[[ "$OVERLAY" =~ ^[a-z]+$ ]] || {
+OVERLAY="${1:?Usage: $0 <overlay> [namespace-override] (e.g., stage, production)}"
+[[ "$OVERLAY" =~ ^[a-z-]+$ ]] || {
 	echo "ERROR: Invalid overlay name: $OVERLAY"
 	exit 1
 }
@@ -13,41 +13,62 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TMPFILE=""
 trap 'rm -f "$TMPFILE"' EXIT
 
-NAMESPACE=$(grep '^namespace:' "$REPO_ROOT/overlays/$OVERLAY/kustomization.yaml" | awk '{print $2}')
-if [[ -z "$NAMESPACE" ]]; then
-	echo "ERROR: Could not extract namespace from overlays/$OVERLAY/kustomization.yaml"
-	exit 1
+if [[ -n "${2:-}" ]]; then
+	NAMESPACE="$2"
+else
+	NAMESPACE=$(grep '^namespace:' "$REPO_ROOT/overlays/$OVERLAY/kustomization.yaml" | awk '{print $2}')
+	if [[ -z "$NAMESPACE" ]]; then
+		echo "ERROR: Could not extract namespace from overlays/$OVERLAY/kustomization.yaml"
+		exit 1
+	fi
 fi
 
 # --- Route TLS patching ---
+# Patches a route with TLS certs based on its termination type:
+#   reencrypt  → certificate + key + destinationCACertificate
+#   edge       → certificate + key only (no destination CA)
+#   passthrough → skip (router does not terminate TLS)
+patch_route() {
+	local route_name="$1" cert_json="$2" key_json="$3" ca_json="$4"
+	local termination
+	termination=$(oc get route "$route_name" -n "$NAMESPACE" -o jsonpath='{.spec.tls.termination}' 2>/dev/null) || :
+
+	case "$termination" in
+	reencrypt)
+		oc patch route "$route_name" -n "$NAMESPACE" --type=merge -p \
+			"{\"spec\":{\"tls\":{\"certificate\":$cert_json,\"key\":$key_json,\"destinationCACertificate\":$ca_json}}}"
+		echo "  $route_name route patched (reencrypt — cert + key + destinationCA)"
+		;;
+	edge)
+		oc patch route "$route_name" -n "$NAMESPACE" --type=merge -p \
+			"{\"spec\":{\"tls\":{\"certificate\":$cert_json,\"key\":$key_json}}}"
+		echo "  $route_name route patched (edge — cert + key only)"
+		;;
+	passthrough)
+		echo "  $route_name route skipped (passthrough — router does not terminate TLS)"
+		;;
+	*)
+		echo "  WARNING: $route_name has unknown termination '$termination' — skipping TLS patch"
+		;;
+	esac
+}
+
 if oc get secret route-tls-certs -n "$NAMESPACE" &>/dev/null; then
 	echo "Patching Routes with TLS certificates..."
 
-	COLLECTOR_CERT_B64=$(oc get secret route-tls-certs -n "$NAMESPACE" -o jsonpath='{.data.collector\.crt}')
-	COLLECTOR_CERT=$(echo "$COLLECTOR_CERT_B64" | base64 -d)
-	COLLECTOR_KEY_B64=$(oc get secret route-tls-certs -n "$NAMESPACE" -o jsonpath='{.data.collector\.key}')
-	COLLECTOR_KEY=$(echo "$COLLECTOR_KEY_B64" | base64 -d)
-	GRAFANA_CERT_B64=$(oc get secret route-tls-certs -n "$NAMESPACE" -o jsonpath='{.data.grafana\.crt}')
-	GRAFANA_CERT=$(echo "$GRAFANA_CERT_B64" | base64 -d)
-	GRAFANA_KEY_B64=$(oc get secret route-tls-certs -n "$NAMESPACE" -o jsonpath='{.data.grafana\.key}')
-	GRAFANA_KEY=$(echo "$GRAFANA_KEY_B64" | base64 -d)
-	CA_CHAIN_B64=$(oc get secret route-tls-certs -n "$NAMESPACE" -o jsonpath='{.data.ca-chain\.crt}')
-	CA_CHAIN=$(echo "$CA_CHAIN_B64" | base64 -d)
+	COLLECTOR_CERT=$(oc get secret route-tls-certs -n "$NAMESPACE" -o jsonpath='{.data.collector\.crt}' | base64 -d)
+	COLLECTOR_KEY=$(oc get secret route-tls-certs -n "$NAMESPACE" -o jsonpath='{.data.collector\.key}' | base64 -d)
+	GRAFANA_CERT=$(oc get secret route-tls-certs -n "$NAMESPACE" -o jsonpath='{.data.grafana\.crt}' | base64 -d)
+	GRAFANA_KEY=$(oc get secret route-tls-certs -n "$NAMESPACE" -o jsonpath='{.data.grafana\.key}' | base64 -d)
+	CA_CHAIN=$(oc get secret route-tls-certs -n "$NAMESPACE" -o jsonpath='{.data.ca-chain\.crt}' | base64 -d)
 
+	CA_CHAIN_JSON=$(echo "$CA_CHAIN" | jq -Rs .)
 	COLLECTOR_CERT_JSON=$(echo "$COLLECTOR_CERT" | jq -Rs .)
 	COLLECTOR_KEY_JSON=$(echo "$COLLECTOR_KEY" | jq -Rs .)
-	CA_CHAIN_JSON=$(echo "$CA_CHAIN" | jq -Rs .)
-
-	oc patch route collector-http -n "$NAMESPACE" --type=merge -p \
-		"{\"spec\":{\"tls\":{\"certificate\":$COLLECTOR_CERT_JSON,\"key\":$COLLECTOR_KEY_JSON,\"destinationCACertificate\":$CA_CHAIN_JSON}}}"
-	echo "  collector-http route patched"
-
 	GRAFANA_CERT_JSON=$(echo "$GRAFANA_CERT" | jq -Rs .)
 	GRAFANA_KEY_JSON=$(echo "$GRAFANA_KEY" | jq -Rs .)
-
-	oc patch route grafana -n "$NAMESPACE" --type=merge -p \
-		"{\"spec\":{\"tls\":{\"certificate\":$GRAFANA_CERT_JSON,\"key\":$GRAFANA_KEY_JSON,\"destinationCACertificate\":$CA_CHAIN_JSON}}}"
-	echo "  grafana route patched"
+	patch_route "collector-http" "$COLLECTOR_CERT_JSON" "$COLLECTOR_KEY_JSON" "$CA_CHAIN_JSON"
+	patch_route "grafana" "$GRAFANA_CERT_JSON" "$GRAFANA_KEY_JSON" "$CA_CHAIN_JSON"
 else
 	echo "WARNING: route-tls-certs secret not found — Routes will use default OpenShift certs."
 	echo "  Create the SealedSecret to use custom TLS certificates (see sealed-secrets/README.md)."
