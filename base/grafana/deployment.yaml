@@ -1,5 +1,6 @@
 # Grafana deployment — serves HTTPS with anonymous auth (base default).
 # Stage/production overlays add OIDC authentication via env var patches.
+# checkov:skip=CKV_K8S_40:OpenShift assigns UIDs from namespace ranges; hardcoding runAsUser breaks SCC allocation
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,9 +18,6 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 10001
-        runAsGroup: 10001
-        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       dnsPolicy: ClusterFirst
@@ -39,8 +37,6 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 10001
-            runAsGroup: 10001
             capabilities:
               drop:
                 - ALL

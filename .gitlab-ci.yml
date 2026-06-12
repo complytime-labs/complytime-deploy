@@ -4,43 +4,31 @@ stages:
   - deploy-production
 
 .deploy-template: &deploy-template
-  image: quay.io/fedora/fedora
+  image: registry.access.redhat.com/ubi10/ubi-minimal
   tags:
     - itup-alm-x86
-  variables:
-    KUSTOMIZE_VERSION: "v5.6.0"
-    SKAFFOLD_VERSION: "v2.18.3"
   before_script:
+    - microdnf install -y --nodocs tar gzip jq && microdnf clean all
+    # Bootstrap task binary with checksum verification from .tool_checksums.
+    # This is the only tool installed via raw shell — everything else goes
+    # through 'task tools:install-*'.
     - |
-      echo "zchunk=False" >> /etc/dnf/dnf.conf
-      dnf clean all
-      dnf install -y wget tar jq
-      # TODO: Snag https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz, validate against https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/sha256sum.txt and https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/sha256sum.txt.gpg # DevSkim: ignore DS176209 - legitimate engineering TODO to add integrity verification
-      tar -xf oc.tar
-      mkdir -p /usr/local/bin
-      mv oc /usr/local/bin/oc
-      chmod +x /usr/local/bin/oc
-      rm -rf oc.tar
-    - oc version
-    - |
-      wget -qO kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
-      tar -xzf kustomize.tar.gz
-      mv kustomize /usr/local/bin/
-      rm -f kustomize.tar.gz
-    - |
-      wget -qO /usr/local/bin/skaffold "https://storage.googleapis.com/skaffold/releases/${SKAFFOLD_VERSION}/skaffold-linux-amd64"
-      chmod +x /usr/local/bin/skaffold
+      TASK_VERSION=$(grep '^task/' .tool_checksums | head -1 | cut -d/ -f2)
+      EXPECTED=$(grep "task/${TASK_VERSION}/linux/amd64" .tool_checksums | cut -d: -f2 | tr -d ' ')
+      curl -fsSL -o /tmp/task.tar.gz \
+        "https://github.com/go-task/task/releases/download/${TASK_VERSION}/task_linux_amd64.tar.gz"
+      echo "${EXPECTED}  /tmp/task.tar.gz" | sha256sum -c -
+      tar -xzf /tmp/task.tar.gz -C /usr/local/bin task
+      rm -f /tmp/task.tar.gz
+      task --version
+    - task tools:install-deploy TOOLS_DIR=/usr/local/bin
     - ln -sf /usr/local/bin/oc /usr/local/bin/kubectl
 
 validate:
   <<: *deploy-template
   stage: validate
   script:
-    # Render-only (no cluster credentials in this stage).
-    # Run 'task sk:validate' locally for server-side dry-run.
-    - skaffold render > /dev/null
-    - skaffold render -p stage > /dev/null
-    - skaffold render -p production > /dev/null
+    - task sk:validate
 
 deploy-stage:
   <<: *deploy-template
@@ -55,7 +43,7 @@ deploy-stage:
         echo "ERROR: OPENSHIFT_SERVER_STAGE and OPENSHIFT_STAGE_TOKEN must be set"
         exit 1
       fi
-    - skaffold run -p stage
+    - task sk:run --yes -- stage
 
 deploy-production:
   <<: *deploy-template
@@ -70,4 +58,4 @@ deploy-production:
         echo "ERROR: OPENSHIFT_SERVER_PRODUCTION and OPENSHIFT_PRODUCTION_TOKEN must be set"
         exit 1
       fi
-    - skaffold run -p production
+    - task sk:run --yes -- production

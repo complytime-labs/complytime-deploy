@@ -1,4 +1,5 @@
 # Collector deployment — exposes webhook (8088), gRPC (4317), and HTTP (4318) ports.
+# checkov:skip=CKV_K8S_40:OpenShift assigns UIDs from namespace ranges; hardcoding runAsUser breaks SCC allocation
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,9 +17,6 @@ spec:
       automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
-        runAsUser: 10001
-        runAsGroup: 10001
-        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       dnsPolicy: ClusterFirst
@@ -39,8 +37,6 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 10001
-            runAsGroup: 10001
             capabilities:
               drop:
                 - ALL
@@ -60,15 +56,13 @@ spec:
               memory: "1Gi"
               cpu: "1"
           readinessProbe:
-            httpGet:
-              path: /
+            tcpSocket:
               port: 4318
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
           livenessProbe:
-            httpGet:
-              path: /
+            tcpSocket:
               port: 4318
             initialDelaySeconds: 15
             periodSeconds: 30

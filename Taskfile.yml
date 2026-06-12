@@ -5,6 +5,8 @@ version: "3"
 silent: true
 
 includes:
+  tools:
+    taskfile: .taskfiles/tools.yml
   sk:
     taskfile: .taskfiles/sk.yml
   crc:
@@ -16,6 +18,8 @@ includes:
 
 vars:
   TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'
+  DEFAULT_NAMESPACE: '{{.DEFAULT_NAMESPACE | default "complytime-dev"}}'
+  NAMESPACE: '{{.NAMESPACE | default ""}}'
 
 env:
   DOCKER_HOST:
