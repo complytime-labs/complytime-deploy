@@ -45,29 +45,32 @@ validate:
 
 validate-server-stage:
   extends: .validate-server
+  environment:
+    name: stage
   variables:
-    VALIDATE_SERVER: "$OPENSHIFT_SERVER_STAGE"
-    VALIDATE_TOKEN: "$OPENSHIFT_STAGE_TOKEN"
+    VALIDATE_SERVER: "$OPENSHIFT_SERVER"
+    VALIDATE_TOKEN: "$OPENSHIFT_TOKEN"
     VALIDATE_PROFILE: stage
 
 validate-server-production:
   extends: .validate-server
+  environment:
+    name: production
   variables:
-    VALIDATE_SERVER: "$OPENSHIFT_SERVER_PRODUCTION"
-    VALIDATE_TOKEN: "$OPENSHIFT_PRODUCTION_TOKEN"
+    VALIDATE_SERVER: "$OPENSHIFT_SERVER"
+    VALIDATE_TOKEN: "$OPENSHIFT_TOKEN"
     VALIDATE_PROFILE: production
 
 deploy-stage:
   <<: *deploy-template
   stage: deploy-stage
   when: manual
-  variables:
-    OPENSHIFT_SERVER_STAGE: "${OPENSHIFT_SERVER_STAGE}"
-    OPENSHIFT_STAGE_TOKEN: "${OPENSHIFT_STAGE_TOKEN}"
+  environment:
+    name: stage
   script:
     - |
-      if [ -z "$OPENSHIFT_SERVER_STAGE" ] || [ -z "$OPENSHIFT_STAGE_TOKEN" ]; then
-        echo "ERROR: OPENSHIFT_SERVER_STAGE and OPENSHIFT_STAGE_TOKEN must be set"
+      if [ -z "$OPENSHIFT_SERVER" ] || [ -z "$OPENSHIFT_TOKEN" ]; then
+        echo "ERROR: OPENSHIFT_SERVER and OPENSHIFT_TOKEN must be set (scoped to stage environment)"
         exit 1
       fi
     - task sk:run --yes -- stage
@@ -76,13 +79,12 @@ deploy-production:
   <<: *deploy-template
   stage: deploy-production
   when: manual
-  variables:
-    OPENSHIFT_SERVER_PRODUCTION: "${OPENSHIFT_SERVER_PRODUCTION}"
-    OPENSHIFT_PRODUCTION_TOKEN: "${OPENSHIFT_PRODUCTION_TOKEN}"
+  environment:
+    name: production
   script:
     - |
-      if [ -z "$OPENSHIFT_SERVER_PRODUCTION" ] || [ -z "$OPENSHIFT_PRODUCTION_TOKEN" ]; then
-        echo "ERROR: OPENSHIFT_SERVER_PRODUCTION and OPENSHIFT_PRODUCTION_TOKEN must be set"
+      if [ -z "$OPENSHIFT_SERVER" ] || [ -z "$OPENSHIFT_TOKEN" ]; then
+        echo "ERROR: OPENSHIFT_SERVER and OPENSHIFT_TOKEN must be set (scoped to production environment)"
         exit 1
       fi
     - task sk:run --yes -- production

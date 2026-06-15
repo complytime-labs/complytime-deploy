@@ -1,5 +1,16 @@
 #!/bin/bash
 set -euo pipefail
+set +x  # Never trace — variable expansions would leak secrets to stderr
+
+# apply-sealed-secrets.sh — Ensure required secrets exist before deployment.
+#
+# Two modes of operation:
+#   1. CI mode:  When CI environment variables are set (AWS_ACCESS_KEY_ID, etc.),
+#                creates/updates secrets directly from those variables.
+#   2. Fallback: When CI variables are absent, applies SealedSecret YAML files
+#                from overlays/<overlay>/sealed-secrets/ (original behavior).
+#
+# Usage: apply-sealed-secrets.sh <overlay> [namespace-override]
 
 OVERLAY="${1:?Usage: $0 <overlay> [namespace-override] (e.g., stage, production)}"
 [[ "$OVERLAY" =~ ^[a-z-]+$ ]] || {
@@ -20,6 +31,76 @@ else
 	fi
 fi
 
+# Validate namespace — must be a valid Kubernetes name (RFC 1123 DNS label)
+[[ "$NAMESPACE" =~ ^[a-z][a-z0-9-]*[a-z0-9]$ ]] || {
+	echo "ERROR: Invalid namespace: $NAMESPACE"
+	exit 1
+}
+
+CREATED=0
+UPDATED=0
+SKIPPED=0
+
+# --- Helper: create or update a secret idempotently ---
+# Uses dry-run + apply so the secret is created if missing or updated if changed.
+# Output is suppressed to prevent base64-encoded secret values from leaking into
+# CI job logs.
+apply_secret() {
+	local name="$1"
+	shift
+
+	if oc get secret "$name" -n "$NAMESPACE" &>/dev/null; then
+		echo "  $name: exists — updating"
+		"$@" -n "$NAMESPACE" --dry-run=client -o yaml | oc apply -n "$NAMESPACE" -f - >/dev/null
+		UPDATED=$((UPDATED + 1))
+	else
+		echo "  $name: creating"
+		"$@" -n "$NAMESPACE" --dry-run=client -o yaml | oc apply -n "$NAMESPACE" -f - >/dev/null
+		CREATED=$((CREATED + 1))
+	fi
+}
+
+# --- CI mode: create secrets from environment variables ---
+if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+	echo "Creating secrets from CI variables for $OVERLAY (namespace: $NAMESPACE)..."
+
+	# aws-creds
+	apply_secret aws-creds \
+		oc create secret generic aws-creds \
+		--from-literal=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+		--from-literal=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+
+	# quay-io-pull-secret (optional — only if QUAY_DOCKER_CONFIG_JSON is set)
+	if [[ -n "${QUAY_DOCKER_CONFIG_JSON:-}" ]]; then
+		# Validate JSON before writing to disk
+		if ! printf '%s' "$QUAY_DOCKER_CONFIG_JSON" | jq empty 2>/dev/null; then
+			echo "ERROR: QUAY_DOCKER_CONFIG_JSON is not valid JSON"
+			exit 1
+		fi
+
+		TMPFILE=$(mktemp)
+		trap 'rm -f "$TMPFILE"' EXIT
+		chmod 600 "$TMPFILE"
+		printf '%s' "$QUAY_DOCKER_CONFIG_JSON" >"$TMPFILE"
+
+		apply_secret quay-io-pull-secret \
+			oc create secret generic quay-io-pull-secret \
+			--type=kubernetes.io/dockerconfigjson \
+			--from-file=.dockerconfigjson="$TMPFILE"
+
+		rm -f "$TMPFILE"
+		trap - EXIT
+	else
+		echo "  quay-io-pull-secret: QUAY_DOCKER_CONFIG_JSON not set — skipping"
+		SKIPPED=$((SKIPPED + 1))
+	fi
+
+	echo ""
+	echo "Secrets from CI variables: $CREATED created, $UPDATED updated, $SKIPPED skipped"
+	exit 0
+fi
+
+# --- Fallback: apply SealedSecret YAML files (original behavior) ---
 SEALED_DIR="$REPO_ROOT/overlays/$OVERLAY/sealed-secrets"
 
 if ! ls "$SEALED_DIR"/*.yaml &>/dev/null 2>&1; then
