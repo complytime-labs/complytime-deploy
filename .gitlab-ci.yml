@@ -30,6 +30,33 @@ validate:
   script:
     - task sk:validate
 
+.validate-server:
+  <<: *deploy-template
+  stage: validate
+  allow_failure: true
+  script:
+    - |
+      if [ -z "$VALIDATE_SERVER" ] || [ -z "$VALIDATE_TOKEN" ]; then
+        echo "Skipping: VALIDATE_SERVER or VALIDATE_TOKEN not set"
+        exit 0
+      fi
+    - oc login --token="$VALIDATE_TOKEN" --server="$VALIDATE_SERVER"
+    - skaffold render -p "$VALIDATE_PROFILE" | oc apply --dry-run=server -f -
+
+validate-server-stage:
+  extends: .validate-server
+  variables:
+    VALIDATE_SERVER: "$OPENSHIFT_SERVER_STAGE"
+    VALIDATE_TOKEN: "$OPENSHIFT_STAGE_TOKEN"
+    VALIDATE_PROFILE: stage
+
+validate-server-production:
+  extends: .validate-server
+  variables:
+    VALIDATE_SERVER: "$OPENSHIFT_SERVER_PRODUCTION"
+    VALIDATE_TOKEN: "$OPENSHIFT_PRODUCTION_TOKEN"
+    VALIDATE_PROFILE: production
+
 deploy-stage:
   <<: *deploy-template
   stage: deploy-stage
