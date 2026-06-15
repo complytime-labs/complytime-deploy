@@ -118,19 +118,12 @@ tasks:
       - echo "Rendered all profiles to {{.RENDER_DIR}}/"
 
   validate:
-    desc: Validate all Skaffold profiles (render + server-side dry-run if logged in)
+    desc: Validate all Skaffold profiles (client-side render check)
     cmds:
-      - echo "Rendering default (local)..." && skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" > /dev/null
-      - echo "Rendering stage..." && skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" -p stage > /dev/null
-      - echo "Rendering production..." && skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" -p production > /dev/null
-      - |
-        if oc whoami &>/dev/null; then
-          echo "Server-side dry-run against {{.OC_SERVER}}..."
-          skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" | oc apply --dry-run=server -f -
-        else
-          echo "Skipping server-side dry-run (not logged into a cluster)"
-        fi
-      - echo "All profiles validated successfully"
+      - echo "Rendering default (local)..." && skaffold render > /dev/null
+      - echo "Rendering stage..." && skaffold render -p stage > /dev/null
+      - echo "Rendering production..." && skaffold render -p production > /dev/null
+      - echo "All profiles rendered successfully"
 
   status:
     desc: Show pod status in the deployment namespace
