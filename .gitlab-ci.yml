@@ -46,11 +46,12 @@ validate:
     - oc login --token="$VALIDATE_TOKEN" --server="$VALIDATE_SERVER"
     - |
       if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
-        task sk:_generate-overlay NAMESPACE="$DEPLOY_NAMESPACE" BASE="$VALIDATE_PROFILE"
-        skaffold render --namespace="$DEPLOY_NAMESPACE" -f "overlays/custom-${DEPLOY_NAMESPACE}/skaffold.yaml" | oc apply --dry-run=server -f -
+        NS="$DEPLOY_NAMESPACE"
       else
-        skaffold render -p "$VALIDATE_PROFILE" | oc apply --dry-run=server -f -
+        NS=$(task sk:_resolve-namespace -- "$VALIDATE_PROFILE")
       fi
+      task sk:_generate-overlay NAMESPACE="$NS" BASE="$VALIDATE_PROFILE"
+      skaffold render --namespace="$NS" -f "overlays/custom-${NS}/skaffold.yaml" | oc apply --dry-run=server -f -
 
 validate-server-stage:
   extends: .validate-server

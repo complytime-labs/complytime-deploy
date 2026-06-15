@@ -3,13 +3,6 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: loki-storage
-  labels:
-    paas.redhat.com/appcode: CPLY-001
-  annotations:
-    Provisioner: efs.csi.aws.com
-    volume.beta.kubernetes.io/storage-provisioner: efs.csi.aws.com
-    AppCode: CPLY-001
-    kubernetes.io/reclaimPolicy: Delete
 spec:
   accessModes:
     - ReadWriteMany
