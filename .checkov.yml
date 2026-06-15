@@ -24,3 +24,5 @@ skip-check:
   - CKV_K8S_35
   # Collector SA token automount required for OIDC-based authentication
   - CKV_K8S_38
+  # OpenShift assigns UIDs from namespace ranges; hardcoding runAsUser breaks SCC allocation
+  - CKV_K8S_40

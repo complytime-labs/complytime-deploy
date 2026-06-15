@@ -1,39 +1,109 @@
 version: "3"
 
 vars:
-  OC_PROJECT:
-    sh: oc project -q 2>/dev/null || echo "<not logged in>"
   OC_SERVER:
     sh: oc whoami --show-server 2>/dev/null || echo "<not logged in>"
+  BASE: '{{.BASE | default "local"}}'
 
 tasks:
   default:
     silent: true
     cmd: task sk --list
 
+  _generate-overlay:
+    vars:
+      OVERLAY_DIR: "{{.ROOT_DIR}}/overlays/custom-{{.NAMESPACE}}"
+      BASE_DIR: "{{.ROOT_DIR}}/overlays/{{.BASE}}"
+    preconditions:
+      - sh: test -f "{{.BASE_DIR}}/kustomization.yaml"
+        msg: "Base overlay not found: overlays/{{.BASE}}/kustomization.yaml"
+    status:
+      - test -f "{{.OVERLAY_DIR}}/kustomization.yaml"
+      - test -f "{{.OVERLAY_DIR}}/skaffold.yaml"
+    cmds:
+      - mkdir -p "{{.OVERLAY_DIR}}"
+      - |
+        printf '%s\n' \
+          "apiVersion: kustomize.config.k8s.io/v1beta1" \
+          "kind: Kustomization" \
+          "namespace: {{.NAMESPACE}}" \
+          "resources:" \
+          "  - ../{{.BASE}}/" \
+          >"{{.OVERLAY_DIR}}/kustomization.yaml"
+      - |
+        printf '%s\n' \
+          "apiVersion: skaffold/v4beta13" \
+          "kind: Config" \
+          "metadata:" \
+          "  name: complytime-custom" \
+          "manifests:" \
+          "  kustomize:" \
+          '    paths: ["overlays/custom-{{.NAMESPACE}}"]' \
+          "deploy:" \
+          "  kubectl:" \
+          "    hooks:" \
+          "      before:" \
+          "        - host:" \
+          "            command:" \
+          '              ["sh", "-c", "oc new-project {{.NAMESPACE}} 2>/dev/null || oc project {{.NAMESPACE}}"]' \
+          "        - host:" \
+          "            command:" \
+          '              ["sh", "-c", "oc delete job rustfs-create-bucket -n {{.NAMESPACE}} 2>/dev/null || true"]' \
+          "        - host:" \
+          '            command: ["./scripts/apply-sealed-secrets.sh", "{{.BASE}}", "{{.NAMESPACE}}"]' \
+          "      after:" \
+          "        - host:" \
+          '            command: ["./scripts/post-deploy.sh", "{{.BASE}}", "{{.NAMESPACE}}"]' \
+          >"{{.OVERLAY_DIR}}/skaffold.yaml"
+      - 'echo "Generated overlay at overlays/custom-{{.NAMESPACE}}/ (base: {{.BASE}})"'
+
   dev:
     desc: Start continuous dev loop (deploy, port-forward, log-tail, cleanup on exit)
-    prompt: "This will deploy to {{.OC_SERVER}} (project: {{.OC_PROJECT}}). Continue?"
+    preconditions:
+      - sh: '[ -z "{{.NAMESPACE}}" ]'
+        msg: "sk:dev does not support NAMESPACE. Use sk:run NAMESPACE={{.NAMESPACE}} instead."
+    prompt: "This will deploy to {{.OC_SERVER}} namespace {{.DEFAULT_NAMESPACE}}. Continue?"
     cmds:
-      - skaffold dev
+      - skaffold dev --namespace="{{.DEFAULT_NAMESPACE}}"
 
   _deploy:
-    internal: true
     cmds:
-      - skaffold run {{if .CLI_ARGS}}-p {{.CLI_ARGS}}{{end}}
-      - oc wait --for=condition=ready pod -l app=collector -n {{.NAMESPACE | default "complytime-dev"}} --timeout=120s
-      - oc wait --for=condition=ready pod -l app=loki -n {{.NAMESPACE | default "complytime-dev"}} --timeout=120s
+      - |
+        if [ -n "{{.NAMESPACE}}" ]; then
+          skaffold run --namespace="{{.NAMESPACE}}" -f "overlays/custom-{{.NAMESPACE}}/skaffold.yaml"
+        else
+          DEPLOY_NAMESPACE="{{.DEFAULT_NAMESPACE}}" skaffold run --namespace="{{.DEFAULT_NAMESPACE}}" {{if .CLI_ARGS}}-p {{.CLI_ARGS}}{{end}}
+        fi
 
   run:
-    desc: "One-shot deploy (usage: task sk:run, or task sk:run -- stage)"
-    prompt: "This will deploy to {{.OC_SERVER}} (project: {{.OC_PROJECT}}). Continue?"
+    desc: "One-shot deploy (usage: task sk:run, task sk:run -- stage, or task sk:run NAMESPACE=foo)"
+    preconditions:
+      - sh: '[ -z "{{.NAMESPACE}}" ] || [ -z "{{.CLI_ARGS}}" ]'
+        msg: "Cannot use NAMESPACE with a Skaffold profile. Use one or the other."
+    prompt: "{{if .NAMESPACE}}This will deploy to {{.OC_SERVER}} namespace {{.NAMESPACE}} (base: {{.BASE}}). Continue?{{else}}This will deploy to {{.OC_SERVER}} namespace {{.DEFAULT_NAMESPACE}}. Continue?{{end}}"
     cmds:
+      - |
+        if [ -n "{{.NAMESPACE}}" ]; then
+          task sk:_generate-overlay NAMESPACE="{{.NAMESPACE}}" BASE="{{.BASE}}"
+        fi
       - task: _deploy
+        vars:
+          NAMESPACE: "{{.NAMESPACE}}"
+          CLI_ARGS: "{{.CLI_ARGS}}"
 
   render:
-    desc: "Render manifests to stdout (usage: task sk:render, or task sk:render -- stage)"
+    desc: "Render manifests to stdout (usage: task sk:render, task sk:render -- stage, or task sk:render NAMESPACE=foo)"
+    preconditions:
+      - sh: '[ -z "{{.NAMESPACE}}" ] || [ -z "{{.CLI_ARGS}}" ]'
+        msg: "Cannot use NAMESPACE with a Skaffold profile. Use one or the other."
     cmds:
-      - skaffold render {{if .CLI_ARGS}}-p {{.CLI_ARGS}}{{end}}
+      - |
+        if [ -n "{{.NAMESPACE}}" ]; then
+          task sk:_generate-overlay NAMESPACE="{{.NAMESPACE}}" BASE="{{.BASE}}"
+          skaffold render --namespace="{{.NAMESPACE}}" -f "overlays/custom-{{.NAMESPACE}}/skaffold.yaml"
+        else
+          skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" {{if .CLI_ARGS}}-p {{.CLI_ARGS}}{{end}}
+        fi
 
   render-all:
     desc: Render all Skaffold profiles to .rendered-manifests/ for scanning
@@ -42,42 +112,57 @@ tasks:
     cmds:
       - rm -rf "{{.RENDER_DIR}}"
       - mkdir -p "{{.RENDER_DIR}}"
-      - skaffold render > "{{.RENDER_DIR}}/local.yaml"
-      - skaffold render -p stage > "{{.RENDER_DIR}}/stage.yaml"
-      - skaffold render -p production > "{{.RENDER_DIR}}/production.yaml"
+      - skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" > "{{.RENDER_DIR}}/local.yaml"
+      - skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" -p stage > "{{.RENDER_DIR}}/stage.yaml"
+      - skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" -p production > "{{.RENDER_DIR}}/production.yaml"
       - echo "Rendered all profiles to {{.RENDER_DIR}}/"
 
   validate:
     desc: Validate all Skaffold profiles (render + server-side dry-run if logged in)
     cmds:
-      - echo "Rendering default (local)..." && skaffold render > /dev/null
-      - echo "Rendering stage..." && skaffold render -p stage > /dev/null
-      - echo "Rendering production..." && skaffold render -p production > /dev/null
+      - echo "Rendering default (local)..." && skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" > /dev/null
+      - echo "Rendering stage..." && skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" -p stage > /dev/null
+      - echo "Rendering production..." && skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" -p production > /dev/null
       - |
         if oc whoami &>/dev/null; then
           echo "Server-side dry-run against {{.OC_SERVER}}..."
-          skaffold render | oc apply --dry-run=server -f -
+          skaffold render --namespace="{{.DEFAULT_NAMESPACE}}" | oc apply --dry-run=server -f -
         else
           echo "Skipping server-side dry-run (not logged into a cluster)"
         fi
       - echo "All profiles validated successfully"
 
   status:
-    desc: Show pod status in current oc project
+    desc: Show pod status in the deployment namespace
     cmds:
-      - oc get pods
+      - oc get pods -n {{.NAMESPACE | default .DEFAULT_NAMESPACE}}
 
   delete:
-    desc: "Delete deployed resources and PVCs — DESTRUCTIVE (usage: task sk:delete, or task sk:delete -- stage)"
-    prompt: "This will DELETE resources and persistent volumes on {{.OC_SERVER}} (project: {{.OC_PROJECT}}). Continue?"
+    desc: "Delete deployed resources and PVCs — DESTRUCTIVE (usage: task sk:delete, task sk:delete -- stage, or task sk:delete NAMESPACE=foo)"
+    prompt: "{{if .NAMESPACE}}This will DELETE resources in namespace {{.NAMESPACE}} on {{.OC_SERVER}} and remove overlays/custom-{{.NAMESPACE}}/. Continue?{{else}}This will DELETE resources in namespace {{.DEFAULT_NAMESPACE}} on {{.OC_SERVER}}. Continue?{{end}}"
     cmds:
-      - skaffold delete {{if .CLI_ARGS}}-p {{.CLI_ARGS}}{{end}}
       - |
-        PVCS=$(oc get pvc -o name 2>/dev/null)
-        if [ -n "$PVCS" ]; then
-          echo "Deleting PVCs to reclaim disk..."
-          oc delete pvc --all --wait=false
-          echo "PVCs deleted"
+        if [ -n "{{.NAMESPACE}}" ]; then
+          OVERLAY_DIR="{{.ROOT_DIR}}/overlays/custom-{{.NAMESPACE}}"
+          if [ ! -d "$OVERLAY_DIR" ]; then
+            echo "ERROR: Custom overlay not found at $OVERLAY_DIR"
+            echo "  Nothing to delete — was this namespace deployed with sk:run NAMESPACE={{.NAMESPACE}}?"
+            exit 1
+          fi
+          oc project "{{.NAMESPACE}}" >/dev/null
+          skaffold delete --namespace="{{.NAMESPACE}}" -f "overlays/custom-{{.NAMESPACE}}/skaffold.yaml"
+          oc delete pvc --all -n "{{.NAMESPACE}}" --wait=false 2>/dev/null || true
+          rm -rf "$OVERLAY_DIR"
+          echo "Removed generated overlay at overlays/custom-{{.NAMESPACE}}/"
         else
-          echo "No PVCs to clean up"
+          oc project "{{.DEFAULT_NAMESPACE}}" >/dev/null
+          skaffold delete --namespace="{{.DEFAULT_NAMESPACE}}" {{if .CLI_ARGS}}-p {{.CLI_ARGS}}{{end}}
+          PVCS=$(oc get pvc -n "{{.DEFAULT_NAMESPACE}}" -o name 2>/dev/null)
+          if [ -n "$PVCS" ]; then
+            echo "Deleting PVCs to reclaim disk..."
+            oc delete pvc --all -n "{{.DEFAULT_NAMESPACE}}" --wait=false
+            echo "PVCs deleted"
+          else
+            echo "No PVCs to clean up"
+          fi
         fi
