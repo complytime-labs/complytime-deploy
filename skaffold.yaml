@@ -70,7 +70,7 @@ profiles:
                   [
                     "sh",
                     "-c",
-                    'oc login "$OPENSHIFT_SERVER_STAGE" --token="$OPENSHIFT_STAGE_TOKEN"',
+                    'oc login "$OPENSHIFT_SERVER" --token="$OPENSHIFT_TOKEN"',
                   ]
             - host:
                 command:
@@ -99,7 +99,7 @@ profiles:
                   [
                     "sh",
                     "-c",
-                    'oc login "$OPENSHIFT_SERVER_PRODUCTION" --token="$OPENSHIFT_PRODUCTION_TOKEN"',
+                    'oc login "$OPENSHIFT_SERVER" --token="$OPENSHIFT_TOKEN"',
                   ]
             - host:
                 command:
