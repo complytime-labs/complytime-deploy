@@ -7,20 +7,20 @@ task/v3.51.1/linux/amd64/task_linux_amd64.tar.gz: da7e92f0ff961ef2aae7cfecbad8d1
 # oc v4.22.0
 oc/v4.22.0/linux/amd64/openshift-client-linux-4.22.0.tar.gz: b6e027b304678d55e89ea1e8fe5c89e832f9c1a73518a1846e8cf9601c647aef
 
-# kustomize v5.6.0
-kustomize/v5.6.0/linux/amd64/kustomize_v5.6.0_linux_amd64.tar.gz: 54e4031ddc4e7fc59e408da29e7c646e8e57b8088c51b84b3df0864f47b5148f
+# kustomize v5.8.1
+kustomize/v5.8.1/linux/amd64/kustomize_v5.8.1_linux_amd64.tar.gz: 029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d
 
-# skaffold v2.18.3
-skaffold/v2.18.3/linux/amd64/skaffold-linux-amd64: d8bfce071e3e3096736f12f0233d24f16d4baedaadd2181e1eaa1865a346ec3f
+# skaffold v2.22.0
+skaffold/v2.22.0/linux/amd64/skaffold-linux-amd64: a6a4b9c58344da4b41af762ae220e45ea96ffc4664ee4b1f65cdcc8a0b693608
 
-# checkov v3.2.529
-checkov/v3.2.529/any/any/checkov-3.2.529-py3-none-any.whl: fb2d5418913343933e0b33442b7cb49b373af75f4f919c094d6c3b6fb3d03d36
+# checkov v3.3.1
+checkov/v3.3.1/any/any/checkov-3.3.1-py3-none-any.whl: aafc571cc937ddaa0714df30f2b9d79302a07cb9a41b3e0168c7eecb8172db14
 
-# trivy v0.71.0
-trivy/v0.71.0/linux/amd64/trivy_0.71.0_Linux-64bit.tar.gz: 30a3d22b23f88c233f1658f562fb477cae3b3e8b4761109d515b7698daf85814
+# trivy v0.71.1
+trivy/v0.71.1/linux/amd64/trivy_0.71.1_Linux-64bit.tar.gz: 3cbae37cd440cd8676e5ce9207fe460b5641c7579a17e9d00f8894928c41a88d
 
-# yq v4.44.6
-yq/v4.44.6/linux/amd64/yq_linux_amd64: 0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598
+# yq v4.53.3
+yq/v4.53.3/linux/amd64/yq_linux_amd64: fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4
 
 # complyctl v1.0.0-alpha.0
 complyctl/v1.0.0-alpha.0/linux/x86_64/complyctl_linux_x86_64.tar.gz: cf06218076fcec809065e615abd29582527915d569691493fe0e95a03c9302b7
@@ -28,5 +28,5 @@ complyctl/v1.0.0-alpha.0/linux/x86_64/complyctl_linux_x86_64.tar.gz: cf06218076f
 # venom v1.3.0
 venom/v1.3.0/linux/x86_64/venom.linux-amd64: 89832ec25e820c605cf0d3c09122e60bad43d13c1724aa6d375ef7109fbfe201
 
-# kubeseal v0.24.1
-kubeseal/v0.24.1/linux/amd64/kubeseal-0.24.1-linux-amd64.tar.gz: 01776f20fa884fac450bcff65fcaa196fecf4c2672a44fee4cd05ef8b0eac502
+# kubeseal v0.37.0
+kubeseal/v0.37.0/linux/amd64/kubeseal-0.37.0-linux-amd64.tar.gz: dd598209cc8b8398ce3234487609f5ba31f963a4547e8561f10739cb66a75262

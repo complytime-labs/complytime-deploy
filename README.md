@@ -115,6 +115,23 @@ The GitLab CI pipeline uses **environment-scoped variables** to inject different
 | `QUAY_DOCKER_CONFIG_JSON`| `stage`           | Variable | Yes       | Yes    | Quay pull secret JSON (stage)    |
 | `QUAY_DOCKER_CONFIG_JSON`| `production`      | Variable | Yes       | Yes    | Quay pull secret JSON (prod)     |
 
+**Creating the deployer token:**
+
+The `OPENSHIFT_TOKEN` value is a service account token from your target cluster. Create a deployer service account in each namespace:
+
+```bash
+# Create the service account
+oc create serviceaccount deployer -n <namespace>
+
+# Grant edit permissions (deploy, patch, delete resources in the namespace)
+oc policy add-role-to-user edit -z deployer -n <namespace>
+
+# Generate a long-lived token (10 years — rotate on your own schedule)
+oc create token deployer --duration=87600h -n <namespace>
+```
+
+Copy the token output and set it as `OPENSHIFT_TOKEN` in GitLab CI for the corresponding environment scope. Repeat for each target namespace (stage, production).
+
 **Security hardening:**
 
 - **Protected variables** — only injected on protected branches (typically `main`), preventing secret exposure from feature branch pipelines.

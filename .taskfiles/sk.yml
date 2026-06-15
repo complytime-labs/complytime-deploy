@@ -120,9 +120,9 @@ tasks:
   validate:
     desc: Validate all Skaffold profiles (client-side render check)
     cmds:
-      - echo "Rendering default (local)..." && skaffold render > /dev/null
-      - echo "Rendering stage..." && skaffold render -p stage > /dev/null
-      - echo "Rendering production..." && skaffold render -p production > /dev/null
+      - echo "Rendering default (local)..." && skaffold render -v error > /dev/null
+      - echo "Rendering stage..." && skaffold render -v error -p stage > /dev/null
+      - echo "Rendering production..." && skaffold render -v error -p production > /dev/null
       - echo "All profiles rendered successfully"
 
   status:
