@@ -2,6 +2,9 @@
 # Requires: https://taskfile.dev
 version: "3"
 
+dotenv:
+  - skaffold.env
+
 silent: true
 
 includes:

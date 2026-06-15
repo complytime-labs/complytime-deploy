@@ -1,6 +1,9 @@
 variables:
   CI_ENV_STAGE: stage
   CI_ENV_PRODUCTION: production
+  # Skaffold runtime settings (see also skaffold.env for local dev)
+  SKAFFOLD_COLLECT_METRICS: "false"
+  SKAFFOLD_CHECK_CLUSTER_NODE_PLATFORMS: "false"
 
 stages:
   - validate
