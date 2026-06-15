@@ -33,13 +33,10 @@ validate:
 .validate-server:
   <<: *deploy-template
   stage: validate
-  allow_failure: true
+  rules:
+    - if: $VALIDATE_SERVER && $VALIDATE_TOKEN
+      when: on_success
   script:
-    - |
-      if [ -z "$VALIDATE_SERVER" ] || [ -z "$VALIDATE_TOKEN" ]; then
-        echo "Skipping: VALIDATE_SERVER or VALIDATE_TOKEN not set"
-        exit 0
-      fi
     - oc login --token="$VALIDATE_TOKEN" --server="$VALIDATE_SERVER"
     - skaffold render -p "$VALIDATE_PROFILE" | oc apply --dry-run=server -f -
 
@@ -64,27 +61,27 @@ validate-server-production:
 deploy-stage:
   <<: *deploy-template
   stage: deploy-stage
-  when: manual
+  rules:
+    - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
+      when: manual
+  needs:
+    - validate
+    - validate-server-stage
   environment:
     name: stage
   script:
-    - |
-      if [ -z "$OPENSHIFT_SERVER" ] || [ -z "$OPENSHIFT_TOKEN" ]; then
-        echo "ERROR: OPENSHIFT_SERVER and OPENSHIFT_TOKEN must be set (scoped to stage environment)"
-        exit 1
-      fi
     - task sk:run --yes -- stage
 
 deploy-production:
   <<: *deploy-template
   stage: deploy-production
-  when: manual
+  rules:
+    - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
+      when: manual
+  needs:
+    - validate
+    - validate-server-production
   environment:
     name: production
   script:
-    - |
-      if [ -z "$OPENSHIFT_SERVER" ] || [ -z "$OPENSHIFT_TOKEN" ]; then
-        echo "ERROR: OPENSHIFT_SERVER and OPENSHIFT_TOKEN must be set (scoped to production environment)"
-        exit 1
-      fi
     - task sk:run --yes -- production
