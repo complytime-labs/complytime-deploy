@@ -1,8 +1,15 @@
 # EFS storage class for production — ReadWriteMany required for multi-pod access.
+# Annotations required by the PAAS storage admission webhook.
+# AppCode and paas.redhat.com/appcode are injected via commonLabels/commonAnnotations
+# in the generated overlay (see sk:_generate-overlay, controlled by APPCODE variable).
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: loki-storage
+  annotations:
+    Provisioner: efs.csi.aws.com
+    volume.beta.kubernetes.io/storage-provisioner: efs.csi.aws.com
+    kubernetes.io/reclaimPolicy: Delete
 spec:
   storageClassName: aws-efs-tier-c4
   accessModes:
@@ -12,6 +19,10 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: grafana-storage
+  annotations:
+    Provisioner: efs.csi.aws.com
+    volume.beta.kubernetes.io/storage-provisioner: efs.csi.aws.com
+    kubernetes.io/reclaimPolicy: Delete
 spec:
   storageClassName: aws-efs-tier-c4
   accessModes:
