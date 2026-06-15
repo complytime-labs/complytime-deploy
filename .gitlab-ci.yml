@@ -1,3 +1,7 @@
+variables:
+  CI_ENV_STAGE: stage
+  CI_ENV_PRODUCTION: production
+
 stages:
   - validate
   - deploy-stage
@@ -36,14 +40,22 @@ validate:
   rules:
     - if: $VALIDATE_SERVER && $VALIDATE_TOKEN
       when: on_success
+  needs:
+    - validate
   script:
     - oc login --token="$VALIDATE_TOKEN" --server="$VALIDATE_SERVER"
-    - skaffold render -p "$VALIDATE_PROFILE" | oc apply --dry-run=server -f -
+    - |
+      if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
+        task sk:_generate-overlay NAMESPACE="$DEPLOY_NAMESPACE" BASE="$VALIDATE_PROFILE"
+        skaffold render --namespace="$DEPLOY_NAMESPACE" -f "overlays/custom-${DEPLOY_NAMESPACE}/skaffold.yaml" | oc apply --dry-run=server -f -
+      else
+        skaffold render -p "$VALIDATE_PROFILE" | oc apply --dry-run=server -f -
+      fi
 
 validate-server-stage:
   extends: .validate-server
   environment:
-    name: stage
+    name: $CI_ENV_STAGE
   variables:
     VALIDATE_SERVER: "$OPENSHIFT_SERVER"
     VALIDATE_TOKEN: "$OPENSHIFT_TOKEN"
@@ -52,7 +64,7 @@ validate-server-stage:
 validate-server-production:
   extends: .validate-server
   environment:
-    name: production
+    name: $CI_ENV_PRODUCTION
   variables:
     VALIDATE_SERVER: "$OPENSHIFT_SERVER"
     VALIDATE_TOKEN: "$OPENSHIFT_TOKEN"
@@ -65,12 +77,16 @@ deploy-stage:
     - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
       when: manual
   needs:
-    - validate
     - validate-server-stage
   environment:
-    name: stage
+    name: $CI_ENV_STAGE
   script:
-    - task sk:run --yes -- stage
+    - |
+      if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
+        task sk:run --yes NAMESPACE="$DEPLOY_NAMESPACE" BASE=stage
+      else
+        task sk:run --yes -- stage
+      fi
 
 deploy-production:
   <<: *deploy-template
@@ -79,9 +95,13 @@ deploy-production:
     - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
       when: manual
   needs:
-    - validate
     - validate-server-production
   environment:
-    name: production
+    name: $CI_ENV_PRODUCTION
   script:
-    - task sk:run --yes -- production
+    - |
+      if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
+        task sk:run --yes NAMESPACE="$DEPLOY_NAMESPACE" BASE=production
+      else
+        task sk:run --yes -- production
+      fi
