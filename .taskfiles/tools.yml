@@ -20,8 +20,38 @@ tasks:
     cmd: |
       task --list 2>/dev/null
 
-  install-task:
-    desc: "Install task (taskfile.dev) with SHA256 verification"
+  install:
+    desc: "Install one or more tools (usage: task tools:install -- task oc kustomize yq)"
+    preconditions:
+      - sh: '[ -n "{{.CLI_ARGS}}" ]'
+        msg: |
+          Usage: task tools:install -- <tool> [tool...]
+          Available tools: task oc kustomize skaffold checkov trivy yq complyctl venom kubeseal
+    cmds:
+      - for: { var: CLI_ARGS, split: " " }
+        cmd: |
+          case "{{.ITEM}}" in
+            task|oc|kustomize|skaffold|checkov|trivy|yq|complyctl|venom|kubeseal) ;;
+            *) echo "Unknown tool: {{.ITEM}}"; echo "Available: task oc kustomize skaffold checkov trivy yq complyctl venom kubeseal"; exit 1 ;;
+          esac
+      - for: { var: CLI_ARGS, split: " " }
+        task: _install-{{.ITEM}}
+
+  install-deploy:
+    desc: "Install all deployment tools (oc, kustomize, skaffold, kubeseal)"
+    cmds:
+      - task: _install-oc
+      - task: _install-kustomize
+      - task: _install-skaffold
+      - task: _install-kubeseal
+
+  install-scan:
+    desc: "Install all scanning tools (checkov, trivy)"
+    cmds:
+      - task: _install-checkov
+      - task: _install-trivy
+
+  _install-task:
     status:
       - command -v task
     cmds:
@@ -36,8 +66,7 @@ tasks:
       - rm -f /tmp/task.tar.gz /tmp/task
       - task --version
 
-  install-oc:
-    desc: "Install oc (OpenShift CLI) with SHA256 verification"
+  _install-oc:
     status:
       - command -v oc
     cmds:
@@ -52,8 +81,7 @@ tasks:
       - rm -f /tmp/oc.tar.gz /tmp/oc /tmp/README.md
       - oc version --client
 
-  install-kustomize:
-    desc: "Install kustomize with SHA256 verification"
+  _install-kustomize:
     status:
       - command -v kustomize
     cmds:
@@ -68,8 +96,7 @@ tasks:
       - rm -f /tmp/kustomize.tar.gz /tmp/kustomize
       - kustomize version
 
-  install-skaffold:
-    desc: "Install skaffold with SHA256 verification"
+  _install-skaffold:
     status:
       - command -v skaffold
     cmds:
@@ -83,8 +110,7 @@ tasks:
       - rm -f /tmp/skaffold
       - skaffold version
 
-  install-checkov:
-    desc: "Install checkov with SHA256 verification"
+  _install-checkov:
     status:
       - command -v checkov
     cmds:
@@ -96,8 +122,7 @@ tasks:
       - rm -f "/tmp/checkov-{{.CHECKOV_VERSION}}-py3-none-any.whl"
       - checkov --version
 
-  install-trivy:
-    desc: "Install trivy with SHA256 verification"
+  _install-trivy:
     status:
       - command -v trivy
     cmds:
@@ -112,8 +137,7 @@ tasks:
       - rm -f /tmp/trivy.tar.gz /tmp/trivy
       - trivy --version
 
-  install-yq:
-    desc: "Install yq with SHA256 verification"
+  _install-yq:
     status:
       - command -v yq
     cmds:
@@ -127,8 +151,7 @@ tasks:
       - rm -f /tmp/yq
       - yq --version
 
-  install-complyctl:
-    desc: "Install complyctl with SHA256 verification"
+  _install-complyctl:
     status:
       - command -v complyctl
     cmds:
@@ -143,8 +166,7 @@ tasks:
       - rm -rf /tmp/complyctl.tar.gz /tmp/complyctl /tmp/LICENSE /tmp/README.md /tmp/openscap-plugin
       - complyctl version
 
-  install-venom:
-    desc: "Install venom with SHA256 verification"
+  _install-venom:
     status:
       - command -v venom
     cmds:
@@ -158,8 +180,7 @@ tasks:
       - rm -f /tmp/venom.linux-amd64
       - venom version
 
-  install-kubeseal:
-    desc: "Install kubeseal with SHA256 verification"
+  _install-kubeseal:
     status:
       - command -v kubeseal
     cmds:
@@ -173,17 +194,3 @@ tasks:
       - install /tmp/kubeseal "{{.TOOLS_DIR}}/kubeseal"
       - rm -f /tmp/kubeseal.tar.gz /tmp/kubeseal
       - kubeseal --version
-
-  install-deploy:
-    desc: "Install all deployment tools (oc, kustomize, skaffold, kubeseal)"
-    cmds:
-      - task: install-oc
-      - task: install-kustomize
-      - task: install-skaffold
-      - task: install-kubeseal
-
-  install-scan:
-    desc: "Install all scanning tools (checkov, trivy)"
-    cmds:
-      - task: install-checkov
-      - task: install-trivy

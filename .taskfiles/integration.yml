@@ -28,8 +28,8 @@ tasks:
     desc: Install tools, deploy stack if needed, extract CA, start port-forwards, pull OCI bundle
     cmds:
       - task: check-prereqs
-      - task: :tools:install-complyctl
-      - task: :tools:install-venom
+      - task: :tools:_install-complyctl
+      - task: :tools:_install-venom
       - task: _ensure-sealed-secrets
       - task: deploy-if-needed
       - task: _ensure-bucket
