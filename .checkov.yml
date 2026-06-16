@@ -10,6 +10,8 @@ skip-path:
   - overlays/stage/patches
   - overlays/production/patches
   - overlays/local/rustfs
+  # Keycloak dev-mode deployment with hardcoded test credentials; local overlay only
+  - overlays/local/keycloak
 
 skip-check:
   # Namespace is set by Kustomize overlays, not in base manifests

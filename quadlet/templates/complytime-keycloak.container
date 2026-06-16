@@ -1,0 +1,23 @@
+[Unit]
+Description=ComplyTime Keycloak - OIDC identity provider for integration testing
+Requires=complytime-network.service
+After=complytime-network.service
+
+[Container]
+ContainerName=complytime-keycloak
+Image=quay.io/keycloak/keycloak:26.0
+Network=complytime.network
+PublishPort=8180:8080
+Volume=@@RUNTIME@@/configs/complytime-realm.json:/opt/keycloak/data/import/complytime-realm.json:ro
+Environment=KC_BOOTSTRAP_ADMIN_USERNAME=admin
+Environment=KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+Environment=KC_HOSTNAME=http://complytime-keycloak:8080
+Environment=KC_HOSTNAME_STRICT=false
+Exec=start-dev --import-realm
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

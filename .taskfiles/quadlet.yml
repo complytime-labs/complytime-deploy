@@ -48,6 +48,6 @@ tasks:
 
   teardown:
     desc: Stop services, remove quadlet files and generated data — DESTRUCTIVE
-    prompt: This will remove all quadlet services and data. Continue?
+    prompt: '{{if not .FORCE}}This will remove all quadlet services and data. Continue?{{end}}'
     cmds:
       - "{{.ROOT_DIR}}/scripts/quadlet-teardown.sh"

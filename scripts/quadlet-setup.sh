@@ -5,12 +5,14 @@ set -euo pipefail
 
 # Parse arguments
 TLS_ENABLED=true
+OIDC_ENABLED=false
 for arg in "$@"; do
 	case "$arg" in
 	--no-tls) TLS_ENABLED=false ;;
+	--oidc) OIDC_ENABLED=true ;;
 	*)
 		echo "Unknown argument: $arg"
-		echo "Usage: $0 [--no-tls]"
+		echo "Usage: $0 [--no-tls] [--oidc]"
 		exit 1
 		;;
 	esac
@@ -31,7 +33,9 @@ QUADLET_CONFIGS="$QUADLET_DIR/configs"
 
 echo "=== ComplyTime Quadlet Setup ==="
 TLS_LABEL=$([[ "$TLS_ENABLED" = true ]] && echo "enabled" || echo "disabled")
+OIDC_LABEL=$([[ "$OIDC_ENABLED" = true ]] && echo "enabled" || echo "disabled")
 echo "TLS: $TLS_LABEL"
+echo "OIDC: $OIDC_LABEL"
 echo "Collector image: $COLLECTOR_IMAGE"
 echo ""
 
@@ -55,15 +59,21 @@ check_prereqs() {
 	podman_display_version=$(echo "$podman_full_version" | grep -oP '\d+\.\d+\.\d+') || true
 	echo "OK: podman $podman_display_version"
 
-	systemctl_raw=$(systemctl --user status 2>/dev/null) || :
-	systemctl_output=$(echo "$systemctl_raw" | head -2)
-	if ! echo "$systemctl_output" | grep -q "running\|degraded"; then
-		echo "ERROR: systemctl --user not available"
-		current_user=$(whoami) || true
-		echo "  Ensure user lingering is enabled: loginctl enable-linger $current_user"
-		exit 1
+	if systemctl --user is-system-running &>/dev/null; then
+		echo "OK: systemctl --user available"
+	else
+		# is-system-running exits non-zero for "degraded" (some units failed)
+		# but that still means the user session manager is reachable.
+		state=$(systemctl --user is-system-running 2>/dev/null) || true
+		if [[ "$state" == "degraded" || "$state" == "running" ]]; then
+			echo "OK: systemctl --user available ($state)"
+		else
+			echo "ERROR: systemctl --user not available"
+			current_user=$(whoami) || true
+			echo "  Ensure user lingering is enabled: loginctl enable-linger $current_user"
+			exit 1
+		fi
 	fi
-	echo "OK: systemctl --user available"
 
 	if [[ "$TLS_ENABLED" = true ]]; then
 		if ! command -v openssl &>/dev/null; then
@@ -129,7 +139,11 @@ echo "Generating configuration files..."
 PROTOCOL=$([[ "$TLS_ENABLED" = true ]] && echo "https" || echo "http")
 
 # Collector — local config with ${env:*} substitution for hosts
-cp "$LOCAL_CONFIGS/collector-local.yaml" "$RUNTIME_DIR/configs/collector-config.yaml"
+if [[ "$OIDC_ENABLED" = true ]]; then
+	cp "$LOCAL_CONFIGS/collector-oidc.yaml" "$RUNTIME_DIR/configs/collector-config.yaml"
+else
+	cp "$LOCAL_CONFIGS/collector-local.yaml" "$RUNTIME_DIR/configs/collector-config.yaml"
+fi
 # CRC mounts the service CA at /etc/ssl/certs/service-ca.crt via configmap;
 # quadlet mounts it at /etc/tls/ca.crt alongside the server cert.
 sed -i 's|/etc/ssl/certs/service-ca.crt|/etc/tls/ca.crt|g' "$RUNTIME_DIR/configs/collector-config.yaml"
@@ -166,9 +180,14 @@ echo "  Configuration files generated"
 
 # --- Collector environment file ---
 
-cat >"$RUNTIME_DIR/env/collector.env" <<'ENVFILE'
+if [[ "$OIDC_ENABLED" = true ]]; then
+	OIDC_URL="http://complytime-keycloak:8080/realms/complytime"
+else
+	OIDC_URL=""
+fi
+cat >"$RUNTIME_DIR/env/collector.env" <<ENVFILE
 LOKI_HOST=complytime-loki
-OIDC_ISSUER_URL=
+OIDC_ISSUER_URL=${OIDC_URL}
 S3_ENDPOINT=http://complytime-rustfs:9000
 S3_BUCKETNAME=complytime-evidence
 S3_OBJ_DIR=local
@@ -177,6 +196,16 @@ AWS_ACCESS_KEY_ID=rustfsadmin
 AWS_SECRET_ACCESS_KEY=rustfsadmin
 ENVFILE
 echo "  Collector environment file generated"
+
+# --- Keycloak realm (OIDC mode only) ---
+
+if [[ "$OIDC_ENABLED" = true ]]; then
+	echo ""
+	echo "Copying Keycloak realm configuration..."
+	cp "$REPO_ROOT/overlays/local/keycloak/complytime-realm.json" \
+		"$RUNTIME_DIR/configs/complytime-realm.json"
+	echo "  Realm config copied"
+fi
 
 # --- Install quadlet unit files ---
 
