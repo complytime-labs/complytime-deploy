@@ -30,6 +30,10 @@ stages:
       task --version
     - task tools:install-deploy TOOLS_DIR=/usr/local/bin
     - ln -sf /usr/local/bin/oc /usr/local/bin/kubectl
+    - |
+      if [ -n "${OPENSHIFT_TOKEN:-}" ] && [ -n "${OPENSHIFT_SERVER:-}" ]; then
+        oc login --token="$OPENSHIFT_TOKEN" --server="$OPENSHIFT_SERVER"
+      fi
 
 validate:
   <<: *deploy-template
@@ -41,7 +45,7 @@ validate:
   <<: *deploy-template
   stage: validate
   rules:
-    - if: $VALIDATE_SERVER && $VALIDATE_TOKEN
+    - if: $VALIDATE_SERVER != "" && $VALIDATE_TOKEN != ""
       when: on_success
   needs:
     - validate
@@ -91,6 +95,11 @@ deploy-stage:
       else
         task sk:run --yes -- stage
       fi
+  artifacts:
+    paths:
+      - overlays/custom-*
+    expire_in: 7 days
+    when: always
 
 deploy-production:
   <<: *deploy-template
@@ -109,3 +118,8 @@ deploy-production:
       else
         task sk:run --yes -- production
       fi
+  artifacts:
+    paths:
+      - overlays/custom-*
+    expire_in: 7 days
+    when: always
