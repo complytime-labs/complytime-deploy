@@ -31,7 +31,7 @@ trap cleanup EXIT
 for cmd in oc kubeseal openssl; do
 	if ! command -v "$cmd" &>/dev/null; then
 		echo "ERROR: $cmd not found"
-		[[ "$cmd" == "kubeseal" ]] && echo "  Install: task tools:install-kubeseal"
+		[[ "$cmd" == "kubeseal" ]] && echo "  Install: task tools:install -- kubeseal"
 		exit 1
 	fi
 done

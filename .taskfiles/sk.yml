@@ -156,14 +156,72 @@ tasks:
       - echo "Rendered all profiles to {{.RENDER_DIR}}/"
 
   validate:
-    desc: Validate all Skaffold profiles (client-side render check)
+    desc: "Validate all Skaffold profiles (render check; ENV_CHECK=1 to audit env vars)"
+    vars:
+      ENV_CHECK: '{{.ENV_CHECK | default "0"}}'
     cmds:
-      - echo "Rendering default (local)..." && skaffold render -v error > /dev/null
-      - task sk:_generate-overlay NAMESPACE=complytime-stage BASE=stage APPCODE="{{.APPCODE}}"
-      - echo "Rendering stage..." && skaffold render -v error -f overlays/custom-complytime-stage/skaffold.yaml > /dev/null
-      - task sk:_generate-overlay NAMESPACE=complytime-prod BASE=production APPCODE="{{.APPCODE}}"
-      - echo "Rendering production..." && skaffold render -v error -f overlays/custom-complytime-prod/skaffold.yaml > /dev/null
-      - echo "All profiles rendered successfully"
+      - |
+        env_check="{{.ENV_CHECK}}"
+        tmpdir=""
+        cleanup() { [ -n "$tmpdir" ] && rm -rf "$tmpdir"; }
+        trap cleanup EXIT
+
+        if [ "$env_check" = "1" ]; then
+          if ! command -v yq >/dev/null 2>&1; then
+            echo "ERROR: ENV_CHECK=1 requires yq — run: task tools:install -- yq"
+            exit 1
+          fi
+          tmpdir=$(mktemp -d)
+        fi
+
+        # --- Render all profiles ---
+        echo "Rendering default (local)..." && skaffold render -v error > /dev/null
+
+        task sk:_generate-overlay NAMESPACE=complytime-stage BASE=stage APPCODE="{{.APPCODE}}"
+        echo "Rendering stage..."
+        if [ "$env_check" = "1" ]; then
+          skaffold render -v error -f overlays/custom-complytime-stage/skaffold.yaml > "$tmpdir/stage.yaml"
+        else
+          skaffold render -v error -f overlays/custom-complytime-stage/skaffold.yaml > /dev/null
+        fi
+
+        task sk:_generate-overlay NAMESPACE=complytime-prod BASE=production APPCODE="{{.APPCODE}}"
+        echo "Rendering production..."
+        if [ "$env_check" = "1" ]; then
+          skaffold render -v error -f overlays/custom-complytime-prod/skaffold.yaml > "$tmpdir/production.yaml"
+        else
+          skaffold render -v error -f overlays/custom-complytime-prod/skaffold.yaml > /dev/null
+        fi
+
+        echo "All profiles rendered successfully"
+
+        # --- Optional env var audit ---
+        if [ "$env_check" != "1" ]; then
+          exit 0
+        fi
+
+        echo "Checking env vars..."
+        errors=""
+        for profile in stage production; do
+          empty_vars=$(yq eval '
+            select(.kind == "Deployment") |
+            .metadata.name as $deploy |
+            .spec.template.spec.containers[] |
+            .name as $container |
+            .env[] |
+            select(.value == "" and (has("valueFrom") | not)) |
+            $deploy + "/" + $container + ": " + .name
+          ' "$tmpdir/${profile}.yaml" | grep -v '^---$' || true)
+          if [ -n "$empty_vars" ]; then
+            errors="${errors}${errors:+\n}ERROR: ${profile} has empty env vars that must be configured:\n$(echo "$empty_vars" | sed 's/^/  /')\n  Update: overlays/${profile}/patches/"
+          else
+            echo "  ${profile}: all env vars populated"
+          fi
+        done
+        if [ -n "$errors" ]; then
+          printf '\n%b\n' "$errors"
+          exit 1
+        fi
 
   status:
     desc: Show pod status in the deployment namespace

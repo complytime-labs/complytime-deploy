@@ -38,7 +38,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq jq openssl podman
-          task tools:install-yq
+          task tools:install -- yq
 
       - name: Bootstrap systemd user session
         run: |

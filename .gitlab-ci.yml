@@ -18,7 +18,7 @@ stages:
     - microdnf install -y --nodocs tar gzip jq && microdnf clean all
     # Bootstrap task binary with checksum verification from .tool_checksums.
     # This is the only tool installed via raw shell — everything else goes
-    # through 'task tools:install-*'.
+    # through 'task tools:install -- <tool>'.
     - |
       TASK_VERSION=$(grep '^task/' .tool_checksums | head -1 | cut -d/ -f2)
       EXPECTED=$(grep "task/${TASK_VERSION}/linux/amd64" .tool_checksums | cut -d: -f2 | tr -d ' ')
@@ -45,12 +45,12 @@ validate:
   <<: *deploy-template
   stage: validate
   rules:
-    - if: $VALIDATE_SERVER != "" && $VALIDATE_TOKEN != ""
+    - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
       when: on_success
   needs:
     - validate
   script:
-    - oc login --token="$VALIDATE_TOKEN" --server="$VALIDATE_SERVER"
+    - oc login --token="$OPENSHIFT_TOKEN" --server="$OPENSHIFT_SERVER"
     - |
       if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
         NS="$DEPLOY_NAMESPACE"
@@ -65,8 +65,6 @@ validate-server-stage:
   environment:
     name: $CI_ENV_STAGE
   variables:
-    VALIDATE_SERVER: "$OPENSHIFT_SERVER"
-    VALIDATE_TOKEN: "$OPENSHIFT_TOKEN"
     VALIDATE_PROFILE: stage
 
 validate-server-production:
@@ -74,8 +72,6 @@ validate-server-production:
   environment:
     name: $CI_ENV_PRODUCTION
   variables:
-    VALIDATE_SERVER: "$OPENSHIFT_SERVER"
-    VALIDATE_TOKEN: "$OPENSHIFT_TOKEN"
     VALIDATE_PROFILE: production
 
 deploy-stage:
