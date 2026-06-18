@@ -1,0 +1,68 @@
+executor: get-user-oidc-token
+input:
+  keycloak_host: "localhost"
+  keycloak_port: "8180"
+  client_id: "grafana-test"
+  client_secret: "grafana-test-secret" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+  username: "testuser"
+  password: "testpass" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+  timeout: "30"
+
+steps:
+  - type: exec
+    script: |
+      DEADLINE=$(($(date +%s) + {{.input.timeout}}))
+      ATTEMPT=0
+      while [ $(date +%s) -lt $DEADLINE ]; do
+        ATTEMPT=$((ATTEMPT + 1))
+        RESPONSE=$(curl -s -w '\n%{http_code}' \
+          -X POST \
+          "http://{{.input.keycloak_host}}:{{.input.keycloak_port}}/realms/complytime/protocol/openid-connect/token" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "grant_type=password&client_id={{.input.client_id}}&client_secret={{.input.client_secret}}&username={{.input.username}}&password={{.input.password}}&scope=openid+email+profile" \
+          2>/dev/null) || RESPONSE=$'\n000'
+        HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+        BODY=$(echo "$RESPONSE" | sed '$d')
+        if [ "$HTTP_CODE" = "200" ]; then
+          TOKEN=$(echo "$BODY" | jq -r '.access_token // empty')
+          if [ -n "$TOKEN" ]; then
+            # Decode JWT payload (base64url -> base64 -> json)
+            PAYLOAD=$(echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null)
+            SUB=$(echo "$PAYLOAD" | jq -r '.sub // empty')
+            EMAIL=$(echo "$PAYLOAD" | jq -r '.email // empty')
+            USERNAME=$(echo "$PAYLOAD" | jq -r '.preferred_username // empty')
+            echo "ACCESS_TOKEN=${TOKEN}"
+            echo "TOKEN_SUB=${SUB}"
+            echo "TOKEN_EMAIL=${EMAIL}"
+            echo "TOKEN_USERNAME=${USERNAME}"
+            exit 0
+          fi
+        fi
+        REMAINING=$((DEADLINE - $(date +%s)))
+        echo "  get-user-oidc-token attempt $ATTEMPT: HTTP $HTTP_CODE (${REMAINING}s remaining)" >&2
+        sleep 2
+      done
+      echo "ERROR: failed to get user token after $ATTEMPT attempts" >&2
+      exit 1
+    assertions:
+      - result.code ShouldEqual 0
+      - result.systemout ShouldContainSubstring "ACCESS_TOKEN="
+    vars:
+      access_token:
+        from: result.systemout
+        regex: "ACCESS_TOKEN=(\\S+)"
+      token_sub:
+        from: result.systemout
+        regex: "TOKEN_SUB=(\\S+)"
+      token_email:
+        from: result.systemout
+        regex: "TOKEN_EMAIL=(\\S+)"
+      token_username:
+        from: result.systemout
+        regex: "TOKEN_USERNAME=(\\S+)"
+
+output:
+  access_token: "{{.access_token}}"
+  token_sub: "{{.token_sub}}"
+  token_email: "{{.token_email}}"
+  token_username: "{{.token_username}}"

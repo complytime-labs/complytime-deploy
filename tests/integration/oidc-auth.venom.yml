@@ -5,6 +5,15 @@ vars:
   keycloak_port: "8180"
   webhook_port: "8088"
   ca_cert: ".test-output/service-ca.crt"
+  # Client secrets are test fixtures from the local Keycloak dev instance.
+  # Declared as vars so venom's secrets: redaction applies to logs and dumps.
+  _secret_beacon: "beacon-test-secret" # checkov:skip=CKV_SECRET_6:test fixture for local Keycloak dev instance, not a real secret
+  _secret_short_lived: "short-lived-secret" # checkov:skip=CKV_SECRET_6:test fixture for local Keycloak dev instance, not a real secret
+  _secret_wrong_aud: "wrong-aud-secret" # checkov:skip=CKV_SECRET_6:test fixture for local Keycloak dev instance, not a real secret
+secrets:
+  - _secret_beacon
+  - _secret_short_lived
+  - _secret_wrong_aud
 
 testcases:
   # -- Health endpoint is behind OIDC like all webhookevent routes ----------
@@ -17,7 +26,7 @@ testcases:
         keycloak_host: "{{.keycloak_host}}"
         keycloak_port: "{{.keycloak_port}}"
         client_id: "beacon-test"
-        client_secret: "beacon-test-secret" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+        client_secret: "{{._secret_beacon}}"
         assertions:
           - result.access_token ShouldNotBeEmpty
         vars:
@@ -60,7 +69,7 @@ testcases:
         keycloak_host: "{{.keycloak_host}}"
         keycloak_port: "{{.keycloak_port}}"
         client_id: "beacon-test"
-        client_secret: "beacon-test-secret" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+        client_secret: "{{._secret_beacon}}"
         assertions:
           - result.access_token ShouldNotBeEmpty
         vars:
@@ -109,7 +118,7 @@ testcases:
         keycloak_host: "{{.keycloak_host}}"
         keycloak_port: "{{.keycloak_port}}"
         client_id: "beacon-test-short-lived"
-        client_secret: "short-lived-secret" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+        client_secret: "{{._secret_short_lived}}"
         assertions:
           - result.access_token ShouldNotBeEmpty
         vars:
@@ -139,7 +148,7 @@ testcases:
         keycloak_host: "{{.keycloak_host}}"
         keycloak_port: "{{.keycloak_port}}"
         client_id: "beacon-test-wrong-aud"
-        client_secret: "wrong-aud-secret" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+        client_secret: "{{._secret_wrong_aud}}"
         assertions:
           - result.access_token ShouldNotBeEmpty
         vars:

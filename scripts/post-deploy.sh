@@ -138,6 +138,39 @@ else
 	fi
 fi
 
+# --- Grafana OIDC client ID injection ---
+# The Grafana Generic OAuth integration requires a client ID registered with
+# the OIDC provider.  The overlay patch defaults to an empty string; this
+# patches the Deployment with the real value from the CI environment.
+if [[ -n "${GRAFANA_OIDC_CLIENT_ID:-}" ]]; then
+	echo "Patching Grafana with OIDC client ID..."
+	oc set env deployment/grafana GF_AUTH_GENERIC_OAUTH_CLIENT_ID="$GRAFANA_OIDC_CLIENT_ID" -n "$NAMESPACE"
+	echo "  GF_AUTH_GENERIC_OAUTH_CLIENT_ID set"
+else
+	CURRENT_CID=$(oc get deployment/grafana -n "$NAMESPACE" \
+		-o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="GF_AUTH_GENERIC_OAUTH_CLIENT_ID")].value}' 2>/dev/null) || :
+	if [[ -z "$CURRENT_CID" ]]; then
+		echo "WARNING: GRAFANA_OIDC_CLIENT_ID is empty — Grafana OIDC login will not work."
+		echo "  Set GRAFANA_OIDC_CLIENT_ID in GitLab CI variables (Settings > CI/CD > Variables)."
+	fi
+fi
+
+# --- Grafana admin password injection ---
+# Override Grafana's default admin password (admin/admin) for non-local
+# environments.  Without this, the Grafana admin account is wide open.
+if [[ -n "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
+	echo "Patching Grafana with custom admin password..."
+	oc set env deployment/grafana GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_ADMIN_PASSWORD" -n "$NAMESPACE"
+	echo "  GF_SECURITY_ADMIN_PASSWORD set"
+else
+	CURRENT_PWD=$(oc get deployment/grafana -n "$NAMESPACE" \
+		-o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="GF_SECURITY_ADMIN_PASSWORD")].value}' 2>/dev/null) || :
+	if [[ -z "$CURRENT_PWD" ]]; then
+		echo "WARNING: GRAFANA_ADMIN_PASSWORD is empty — Grafana is using the default admin/admin credentials."
+		echo "  Set GRAFANA_ADMIN_PASSWORD in GitLab CI variables (Settings > CI/CD > Variables)."
+	fi
+fi
+
 # --- Wait for rollouts ---
 echo ""
 echo "Waiting for deployments to be ready..."

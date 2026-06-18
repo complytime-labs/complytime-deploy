@@ -1,0 +1,127 @@
+executor: do-authorization-code-login
+input:
+  keycloak_host: "localhost"
+  keycloak_port: "8180"
+  client_id: "grafana-test"
+  client_secret: "grafana-test-secret" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+  redirect_uri: "https://localhost:3000/login/generic_oauth"
+  username: "testuser"
+  password: "testpass" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+  scope: "openid email profile"
+
+steps:
+  - type: exec
+    script: |
+      KC_BASE="http://{{.input.keycloak_host}}:{{.input.keycloak_port}}"
+      REALM_URL="${KC_BASE}/realms/complytime/protocol/openid-connect"
+      COOKIES=$(mktemp)
+      trap "rm -f $COOKIES" EXIT
+
+      # Step 1: GET the authorization endpoint — returns Keycloak login page HTML
+      ENCODED_REDIRECT=$(python3 -c "import urllib.parse; print(urllib.parse.quote('{{.input.redirect_uri}}', safe=''))")
+      ENCODED_SCOPE=$(echo "{{.input.scope}}" | tr ' ' '+')
+      AUTH_URL="${REALM_URL}/auth?client_id={{.input.client_id}}&response_type=code&scope=${ENCODED_SCOPE}&redirect_uri=${ENCODED_REDIRECT}"
+
+      LOGIN_PAGE=$(curl -s -c "$COOKIES" -b "$COOKIES" -L "$AUTH_URL" 2>/dev/null)
+      if [ -z "$LOGIN_PAGE" ]; then
+        echo "RESULT=FAIL"
+        echo "ERROR=Failed to fetch Keycloak login page"
+        exit 0
+      fi
+
+      # Step 2: Extract the form action URL from the HTML
+      # Keycloak's login form has: <form ... action="https://...">
+      FORM_ACTION=$(echo "$LOGIN_PAGE" | grep -oP 'action="[^"]*"' | head -1 | sed 's/action="//;s/"$//' | sed 's/&amp;/\&/g')
+      if [ -z "$FORM_ACTION" ]; then
+        echo "RESULT=FAIL"
+        echo "ERROR=Could not parse login form action URL"
+        exit 0
+      fi
+      # Keycloak's form action URL uses its internal hostname (e.g. keycloak:8080
+      # or complytime-keycloak:8080). Rewrite it to the port-forwarded address
+      # so curl can reach it from the test host.
+      FORM_ACTION=$(echo "$FORM_ACTION" | sed -E "s|https?://[^/]+|http://{{.input.keycloak_host}}:{{.input.keycloak_port}}|")
+
+      # Step 3: POST credentials to the login form
+      HEADERS=$(mktemp)
+      trap "rm -f $COOKIES $HEADERS" EXIT
+      HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+        -c "$COOKIES" -b "$COOKIES" \
+        -D "$HEADERS" \
+        --max-redirs 0 \
+        -d "username={{.input.username}}" \
+        -d "password={{.input.password}}" \
+        "$FORM_ACTION" 2>/dev/null) || HTTP_CODE="000"
+
+      # Step 4: Extract the authorization code from the redirect Location
+      LOCATION=$(grep -i '^location:' "$HEADERS" | tr -d '\r' | sed 's/^[Ll]ocation: *//')
+      rm -f "$HEADERS"
+
+      if [ "$HTTP_CODE" != "302" ] || [ -z "$LOCATION" ]; then
+        echo "RESULT=FAIL"
+        echo "ERROR=Login form POST did not redirect (HTTP ${HTTP_CODE})"
+        exit 0
+      fi
+
+      AUTH_CODE=$(echo "$LOCATION" | grep -oP 'code=[^&]+' | sed 's/code=//')
+      if [ -z "$AUTH_CODE" ]; then
+        echo "RESULT=FAIL"
+        echo "ERROR=No authorization code in redirect URL"
+        exit 0
+      fi
+
+      # Step 5: Exchange the authorization code for tokens
+      TOKEN_RESPONSE=$(curl -s -X POST \
+        "${REALM_URL}/token" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "grant_type=authorization_code&client_id={{.input.client_id}}&client_secret={{.input.client_secret}}&redirect_uri={{.input.redirect_uri}}&code=${AUTH_CODE}" \
+        2>/dev/null)
+
+      TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token // empty')
+      if [ -z "$TOKEN" ]; then
+        TOKEN_ERROR=$(echo "$TOKEN_RESPONSE" | jq -r '.error_description // .error // empty')
+        echo "RESULT=FAIL"
+        echo "ERROR=Token exchange failed: ${TOKEN_ERROR}"
+        exit 0
+      fi
+
+      # Decode JWT payload
+      PAYLOAD=$(echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null)
+      SUB=$(echo "$PAYLOAD" | jq -r '.sub // empty')
+      EMAIL=$(echo "$PAYLOAD" | jq -r '.email // empty')
+      USERNAME=$(echo "$PAYLOAD" | jq -r '.preferred_username // empty')
+
+      echo "RESULT=OK"
+      echo "ACCESS_TOKEN=${TOKEN}"
+      echo "TOKEN_SUB=${SUB}"
+      echo "TOKEN_EMAIL=${EMAIL}"
+      echo "TOKEN_USERNAME=${USERNAME}"
+    assertions:
+      - result.code ShouldEqual 0
+    vars:
+      result:
+        from: result.systemout
+        regex: "RESULT=(\\S+)"
+      access_token:
+        from: result.systemout
+        regex: "ACCESS_TOKEN=(\\S+)"
+      error:
+        from: result.systemout
+        regex: "ERROR=(.*)"
+      token_sub:
+        from: result.systemout
+        regex: "TOKEN_SUB=(\\S+)"
+      token_email:
+        from: result.systemout
+        regex: "TOKEN_EMAIL=(\\S+)"
+      token_username:
+        from: result.systemout
+        regex: "TOKEN_USERNAME=(\\S+)"
+
+output:
+  result: "{{.result}}"
+  access_token: "{{.access_token}}"
+  error: "{{.error}}"
+  token_sub: "{{.token_sub}}"
+  token_email: "{{.token_email}}"
+  token_username: "{{.token_username}}"

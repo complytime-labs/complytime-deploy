@@ -17,6 +17,9 @@ vars:
   S3_ACCESS_KEY: "rustfsadmin"
   S3_SECRET_KEY: "rustfsadmin"
   KEYCLOAK_PORT: "8180"
+  # Set TEST_DEBUG=1 to print diagnostic dumps to stdout during test runs.
+  # Diagnostics are always written to files in TEST_DIR regardless.
+  TEST_DEBUG: '{{.TEST_DEBUG | default ""}}'
 
 tasks:
   default:
@@ -296,6 +299,110 @@ tasks:
           echo "OK: Keycloak removed (CRC)"
         fi
 
+  _swap-grafana-oidc:
+    desc: Configure Grafana with OIDC env vars pointing at local Keycloak (CRC only)
+    internal: true
+    cmds:
+      - |
+        echo "Configuring Grafana for OIDC testing..."
+        KC_REALM="http://keycloak:8080/realms/complytime"
+        oc set env deployment/grafana -n "{{._NS}}" \
+          GF_AUTH_ANONYMOUS_ENABLED="false" \
+          GF_AUTH_GENERIC_OAUTH_ENABLED="true" \
+          GF_AUTH_GENERIC_OAUTH_NAME="Red Hat SSO" \
+          GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP="true" \
+          GF_AUTH_GENERIC_OAUTH_CLIENT_ID="grafana-test" \
+          GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET="grafana-test-secret" \
+          GF_AUTH_GENERIC_OAUTH_SCOPES="openid profile email" \
+          GF_AUTH_GENERIC_OAUTH_AUTH_URL="${KC_REALM}/protocol/openid-connect/auth" \
+          GF_AUTH_GENERIC_OAUTH_TOKEN_URL="${KC_REALM}/protocol/openid-connect/token" \
+          GF_AUTH_GENERIC_OAUTH_API_URL="${KC_REALM}/protocol/openid-connect/userinfo" \
+          GF_AUTH_SIGNOUT_REDIRECT_URL="${KC_REALM}/protocol/openid-connect/logout"
+        oc rollout status deployment/grafana -n "{{._NS}}" --timeout=60s
+        # Restart Grafana port-forward — rollout replaced the pod
+        pkill -f "oc port-forward.*svc/grafana" 2>/dev/null || true
+        sleep 1
+        nohup oc port-forward svc/grafana 3000:3000 -n "{{._NS}}" \
+          >> "{{.TEST_DIR}}/port-forward.log" 2>&1 &
+        # Wait for Grafana to become healthy with OIDC config
+        echo "Waiting for Grafana restart..."
+        for i in $(seq 1 15); do
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -k \
+            "https://localhost:3000/api/health" 2>/dev/null) || true
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "OK: Grafana is up (HTTP $HTTP_CODE)"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "ERROR: Grafana did not restart with OIDC config"
+        exit 1
+
+  _swap-grafana-local:
+    desc: Restore Grafana to anonymous auth (no OIDC, CRC only)
+    internal: true
+    cmds:
+      - |
+        echo "Restoring Grafana to anonymous auth..."
+        oc set env deployment/grafana -n "{{._NS}}" \
+          GF_AUTH_ANONYMOUS_ENABLED="true" \
+          GF_AUTH_GENERIC_OAUTH_ENABLED="false" \
+          GF_AUTH_GENERIC_OAUTH_NAME- \
+          GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP- \
+          GF_AUTH_GENERIC_OAUTH_CLIENT_ID- \
+          GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET- \
+          GF_AUTH_GENERIC_OAUTH_SCOPES- \
+          GF_AUTH_GENERIC_OAUTH_AUTH_URL- \
+          GF_AUTH_GENERIC_OAUTH_TOKEN_URL- \
+          GF_AUTH_GENERIC_OAUTH_API_URL- \
+          GF_AUTH_SIGNOUT_REDIRECT_URL-
+        oc rollout status deployment/grafana -n "{{._NS}}" --timeout=60s
+        pkill -f "oc port-forward.*svc/grafana" 2>/dev/null || true
+        sleep 1
+        nohup oc port-forward svc/grafana 3000:3000 -n "{{._NS}}" \
+          >> "{{.TEST_DIR}}/port-forward.log" 2>&1 &
+        echo "  Waiting for Grafana restart..."
+        for i in $(seq 1 15); do
+          if curl -sf -k "https://localhost:3000/api/health" > /dev/null 2>&1; then
+            echo "OK: Grafana restored to anonymous auth"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "WARNING: Grafana may not have fully restarted"
+
+  test-grafana-oidc:
+    desc: Run Grafana OIDC wiring test suite (CRC only)
+    status:
+      - '[ "{{.MODE}}" = "quadlet" ]'
+    cmds:
+      - task: _start-keycloak
+      - task: _wait-keycloak
+      - task: _swap-grafana-oidc
+      - defer: { task: _swap-grafana-local }
+      - defer: { task: _stop-keycloak }
+      - |
+        if [ ! -f "{{.TEST_DIR}}/service-ca.crt" ]; then
+          echo "ERROR: service CA cert not found at {{.TEST_DIR}}/service-ca.crt"
+          echo "  Run: task integration:setup"
+          exit 1
+        fi
+        mkdir -p "{{.TEST_DIR}}"
+        CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt"
+        VENOM_ARGS=(
+          "{{.INTEGRATION_DIR}}/grafana-oidc-wiring.venom.yml"
+          --lib-dir "{{.INTEGRATION_DIR}}/lib"
+          --output-dir "{{.TEST_DIR}}"
+          --var "ca_cert=${CA_CERT}"
+          --var "keycloak_port={{.KEYCLOAK_PORT}}"
+        )
+        # Both CRC and quadlet access Grafana/Keycloak via port-forward to localhost
+        VENOM_ARGS+=(
+          --var "grafana_host=localhost"
+          --var "keycloak_host=localhost"
+        )
+        venom run "${VENOM_ARGS[@]}" -vv
+
   test-oidc:
     desc: Run OIDC auth boundary test suite
     cmds:
@@ -460,8 +567,10 @@ tasks:
             echo "No-token POST returned: ${CODE}"
           } > "$DIAG" 2>&1
         fi
-        echo "Diagnostic written to $DIAG"
-        cat "$DIAG"
+        if [ -n "{{.TEST_DEBUG}}" ]; then
+          echo "Diagnostic written to $DIAG"
+          cat "$DIAG"
+        fi
       - |
         if [ ! -f "{{.TEST_DIR}}/service-ca.crt" ]; then
           echo "ERROR: service CA cert not found at {{.TEST_DIR}}/service-ca.crt"
@@ -594,6 +703,7 @@ tasks:
       - task: test-pull
       - task: test-pipeline
       - task: test-oidc
+      - task: test-grafana-oidc
 
   _cleanup:
     internal: true
