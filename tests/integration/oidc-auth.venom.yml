@@ -1,0 +1,186 @@
+name: OIDC authentication boundary
+vars:
+  collector_host: "collector.complytime-dev.svc"
+  keycloak_host: "localhost"
+  keycloak_port: "8180"
+  webhook_port: "8088"
+  ca_cert: ".test-output/service-ca.crt"
+
+testcases:
+  # -- Health endpoint is behind OIDC like all webhookevent routes ----------
+  # The OTel Collector's confighttp.ServerConfig applies the auth
+  # interceptor to the entire HTTP server, not individual routes.
+
+  - name: Health check with valid token returns 200
+    steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "beacon-test-secret" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          health_token:
+            from: result.access_token
+      - type: exec
+        script: |
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            --http1.1 \
+            --cacert "{{.ca_cert}}" \
+            --resolve "{{.collector_host}}:{{.webhook_port}}:127.0.0.1" \
+            -H "Authorization: Bearer {{.health_token}}" \
+            "https://{{.collector_host}}:{{.webhook_port}}/eventreceiver/healthcheck" \
+            2>/dev/null) || HTTP_CODE="000"
+          echo "HTTP_STATUS=${HTTP_CODE}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "HTTP_STATUS=200"
+
+  - name: Health check without token returns 401
+    steps:
+      - type: exec
+        script: |
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            --http1.1 \
+            --cacert "{{.ca_cert}}" \
+            --resolve "{{.collector_host}}:{{.webhook_port}}:127.0.0.1" \
+            "https://{{.collector_host}}:{{.webhook_port}}/eventreceiver/healthcheck" \
+            2>/dev/null) || HTTP_CODE="000"
+          echo "HTTP_STATUS=${HTTP_CODE}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "HTTP_STATUS=401"
+
+  # -- Positive: valid token accepted --------------------------------------
+
+  - name: POST with valid token returns 200
+    steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "beacon-test-secret" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          valid_token:
+            from: result.access_token
+      - type: post-evidence-auth
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        token: "{{.valid_token}}"
+        control_id: "oidc-valid-token"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  # -- Negative: no token -------------------------------------------------
+
+  - name: POST without token returns 401
+    steps:
+      - type: post-evidence-auth
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        token: ""
+        control_id: "oidc-no-token"
+        assertions:
+          - result.status_code ShouldEqual "401"
+
+  # -- Negative: garbage token --------------------------------------------
+
+  - name: POST with garbage token returns 401
+    steps:
+      - type: post-evidence-auth
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        token: "this.is.not.a.valid.jwt"
+        control_id: "oidc-garbage-token"
+        assertions:
+          - result.status_code ShouldEqual "401"
+
+  # -- Negative: expired token --------------------------------------------
+
+  - name: POST with expired token returns 401
+    steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test-short-lived"
+        client_secret: "short-lived-secret" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          short_lived_token:
+            from: result.access_token
+      - type: exec
+        script: |
+          echo "Waiting 8 seconds for token expiry..."
+          sleep 8
+          echo "DONE"
+        assertions:
+          - result.code ShouldEqual 0
+      - type: post-evidence-auth
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        token: "{{.short_lived_token}}"
+        control_id: "oidc-expired-token"
+        assertions:
+          - result.status_code ShouldEqual "401"
+
+  # -- Negative: wrong audience -------------------------------------------
+
+  - name: POST with wrong-audience token returns 401
+    steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test-wrong-aud"
+        client_secret: "wrong-aud-secret" # checkov:skip=CKV_SECRET_6:test fixture credential for local Keycloak dev instance
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          wrong_aud_token:
+            from: result.access_token
+      - type: post-evidence-auth
+        collector_host: "{{.collector_host}}"
+        webhook_port: "{{.webhook_port}}"
+        ca_cert: "{{.ca_cert}}"
+        token: "{{.wrong_aud_token}}"
+        control_id: "oidc-wrong-aud"
+        assertions:
+          - result.status_code ShouldEqual "401"
+
+  # -- Negative: wrong issuer (self-crafted JWT) --------------------------
+
+  - name: POST with wrong-issuer token returns 401
+    steps:
+      - type: exec
+        script: |
+          # Craft a JWT with a fake issuer that won't match Keycloak's JWKS
+          HEADER=$(echo -n '{"alg":"HS256","typ":"JWT"}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
+          NOW=$(date +%s)
+          EXP=$((NOW + 300))
+          PAYLOAD=$(echo -n "{\"iss\":\"http://evil-issuer:8080/realms/fake\",\"aud\":\"account\",\"sub\":\"attacker\",\"iat\":${NOW},\"exp\":${EXP}}" | base64 -w0 | tr '+/' '-_' | tr -d '=')
+          # Sign with a random secret -- signature won't validate against Keycloak JWKS
+          SIGNATURE=$(echo -n "${HEADER}.${PAYLOAD}" | openssl dgst -sha256 -hmac "fake-secret" -binary | base64 -w0 | tr '+/' '-_' | tr -d '=')
+          FAKE_TOKEN="${HEADER}.${PAYLOAD}.${SIGNATURE}"
+
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            --http1.1 \
+            --cacert "{{.ca_cert}}" \
+            --resolve "{{.collector_host}}:{{.webhook_port}}:127.0.0.1" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${FAKE_TOKEN}" \
+            -d '{"activity_id":0,"category_uid":6,"class_uid":6007,"metadata":{"product":{"name":"test"}},"status":"success","status_id":1,"policy":{"uid":"oidc-wrong-issuer"}}' \
+            "https://{{.collector_host}}:{{.webhook_port}}/eventsource/receiver" \
+            2>/dev/null) || HTTP_CODE="000"
+
+          echo "HTTP_STATUS=${HTTP_CODE}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "HTTP_STATUS=401"

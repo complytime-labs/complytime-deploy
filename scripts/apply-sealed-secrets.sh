@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-set +x  # Never trace — variable expansions would leak secrets to stderr
+set +x # Never trace — variable expansions would leak secrets to stderr
 
 # apply-sealed-secrets.sh — Ensure required secrets exist before deployment.
 #
@@ -70,6 +70,16 @@ if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
 		--from-literal=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
 		--from-literal=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 
+	# grafana-oidc-secret (optional — only if GRAFANA_OIDC_CLIENT_SECRET is set)
+	if [[ -n "${GRAFANA_OIDC_CLIENT_SECRET:-}" ]]; then
+		apply_secret grafana-oidc-secret \
+			oc create secret generic grafana-oidc-secret \
+			--from-literal=client_secret="$GRAFANA_OIDC_CLIENT_SECRET"
+	else
+		echo "  grafana-oidc-secret: GRAFANA_OIDC_CLIENT_SECRET not set — skipping"
+		SKIPPED=$((SKIPPED + 1))
+	fi
+
 	# quay-io-pull-secret (optional — only if QUAY_DOCKER_CONFIG_JSON is set)
 	if [[ -n "${QUAY_DOCKER_CONFIG_JSON:-}" ]]; then
 		# Validate JSON before writing to disk
@@ -92,6 +102,48 @@ if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
 		trap - EXIT
 	else
 		echo "  quay-io-pull-secret: QUAY_DOCKER_CONFIG_JSON not set — skipping"
+		SKIPPED=$((SKIPPED + 1))
+	fi
+
+	# route-tls-certs (optional — only if ROUTE_TLS_COLLECTOR_CRT is set)
+	# All 5 variables must be base64-encoded PEM content.
+	# Encode with: base64 -w0 < collector.crt
+	if [[ -n "${ROUTE_TLS_COLLECTOR_CRT:-}" ]]; then
+		CERT_DIR=$(mktemp -d)
+		trap 'rm -rf "$CERT_DIR"' EXIT
+		chmod 700 "$CERT_DIR"
+
+		for var_pair in \
+			"ROUTE_TLS_COLLECTOR_CRT:collector.crt" \
+			"ROUTE_TLS_COLLECTOR_KEY:collector.key" \
+			"ROUTE_TLS_GRAFANA_CRT:grafana.crt" \
+			"ROUTE_TLS_GRAFANA_KEY:grafana.key" \
+			"ROUTE_TLS_CA_CHAIN:ca-chain.crt"; do
+			var_name="${var_pair%%:*}"
+			file_name="${var_pair##*:}"
+			var_value="${!var_name:-}"
+			if [[ -z "$var_value" ]]; then
+				echo "ERROR: $var_name is not set (all 5 ROUTE_TLS_* variables are required together)"
+				exit 1
+			fi
+			printf '%s' "$var_value" | base64 -d >"$CERT_DIR/$file_name" 2>/dev/null || {
+				echo "ERROR: $var_name is not valid base64"
+				exit 1
+			}
+		done
+
+		apply_secret route-tls-certs \
+			oc create secret generic route-tls-certs \
+			--from-file=collector.crt="$CERT_DIR/collector.crt" \
+			--from-file=collector.key="$CERT_DIR/collector.key" \
+			--from-file=grafana.crt="$CERT_DIR/grafana.crt" \
+			--from-file=grafana.key="$CERT_DIR/grafana.key" \
+			--from-file=ca-chain.crt="$CERT_DIR/ca-chain.crt"
+
+		rm -rf "$CERT_DIR"
+		trap - EXIT
+	else
+		echo "  route-tls-certs: ROUTE_TLS_COLLECTOR_CRT not set — skipping (Routes will use default OpenShift certs)"
 		SKIPPED=$((SKIPPED + 1))
 	fi
 

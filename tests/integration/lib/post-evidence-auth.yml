@@ -1,0 +1,78 @@
+executor: post-evidence-auth
+input:
+  collector_host: ""
+  webhook_port: "8088"
+  ca_cert: ""
+  token: ""
+  control_id: "oidc-test"
+
+steps:
+  - type: exec
+    script: |
+      TIMESTAMP=$(date +%s)000
+      cat > /tmp/oidc_evidence_payload.json <<PAYLOAD
+      {
+        "activity_id": 0,
+        "activity_name": "",
+        "category_name": "Application Activity",
+        "category_uid": 6,
+        "class_name": "Scan Activity",
+        "class_uid": 6007,
+        "metadata": {
+          "log_provider": "ampel",
+          "product": {"name": "ampel", "vendor_name": "ampel", "version": "v0.1.0"},
+          "uid": "ampel-oidc-test-{{.input.control_id}}",
+          "version": "v0.1.0"
+        },
+        "status": "success",
+        "status_id": 1,
+        "severity": "unknown",
+        "severity_id": 0,
+        "policy": {
+          "data": "{\"name\":\"OIDC Test Policy\",\"description\":\"OIDC auth test\",\"sources\":[{\"name\":\"oidc-req\",\"config\":{\"include\":[\"{{.input.control_id}}\"]}}]}",
+          "desc": "OIDC auth test for {{.input.control_id}}",
+          "name": "OIDC Test Policy",
+          "uid": "{{.input.control_id}}"
+        },
+        "action": "observed",
+        "action_id": 3,
+        "scan": {"type_id": 0},
+        "time": ${TIMESTAMP},
+        "type_uid": 60070
+      }
+      PAYLOAD
+
+      if [ -n "{{.input.token}}" ]; then
+        HTTP_CODE=$(curl -s -o /tmp/oidc_post_response.txt -w '%{http_code}' \
+          --http1.1 \
+          --cacert "{{.input.ca_cert}}" \
+          --resolve "{{.input.collector_host}}:{{.input.webhook_port}}:127.0.0.1" \
+          -X POST \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer {{.input.token}}" \
+          -d @/tmp/oidc_evidence_payload.json \
+          "https://{{.input.collector_host}}:{{.input.webhook_port}}/eventsource/receiver" \
+          2>/tmp/oidc_post_err.txt) || HTTP_CODE="000"
+      else
+        HTTP_CODE=$(curl -s -o /tmp/oidc_post_response.txt -w '%{http_code}' \
+          --http1.1 \
+          --cacert "{{.input.ca_cert}}" \
+          --resolve "{{.input.collector_host}}:{{.input.webhook_port}}:127.0.0.1" \
+          -X POST \
+          -H "Content-Type: application/json" \
+          -d @/tmp/oidc_evidence_payload.json \
+          "https://{{.input.collector_host}}:{{.input.webhook_port}}/eventsource/receiver" \
+          2>/tmp/oidc_post_err.txt) || HTTP_CODE="000"
+      fi
+
+      echo "HTTP_STATUS=${HTTP_CODE}"
+      rm -f /tmp/oidc_evidence_payload.json /tmp/oidc_post_response.txt /tmp/oidc_post_err.txt
+    assertions:
+      - result.code ShouldEqual 0
+    vars:
+      http_status:
+        from: result.systemout
+        regex: "HTTP_STATUS=(\\d+)"
+
+output:
+  status_code: "{{.http_status}}"

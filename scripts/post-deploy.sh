@@ -71,7 +71,7 @@ if oc get secret route-tls-certs -n "$NAMESPACE" &>/dev/null; then
 	patch_route "grafana" "$GRAFANA_CERT_JSON" "$GRAFANA_KEY_JSON" "$CA_CHAIN_JSON"
 else
 	echo "WARNING: route-tls-certs secret not found — Routes will use default OpenShift certs."
-	echo "  Create the SealedSecret to use custom TLS certificates (see sealed-secrets/README.md)."
+	echo "  Set ROUTE_TLS_* CI variables or create a SealedSecret (see overlays/<env>/sealed-secrets/README.md)."
 fi
 
 # --- Service CA injection into Grafana datasource ---
@@ -118,6 +118,24 @@ DSPATCH
 		-p "{\"data\":{\"ds.yaml\":$DS_YAML_JSON}}"
 	rm -f "$TMPFILE"
 	echo "  Grafana datasource CA cert injected"
+fi
+
+# --- OIDC issuer URL injection ---
+# The collector OIDC extension requires a valid issuer URL. When deployed via
+# GitLab CI, the OIDC_ISSUER_URL variable is set in GitLab CI/CD settings.
+# The overlay patch defaults to an empty string; this patches the Deployment
+# with the real value from the CI environment.
+if [[ -n "${OIDC_ISSUER_URL:-}" ]]; then
+	echo "Patching collector with OIDC_ISSUER_URL..."
+	oc set env deployment/collector OIDC_ISSUER_URL="$OIDC_ISSUER_URL" -n "$NAMESPACE"
+	echo "  OIDC_ISSUER_URL set"
+else
+	CURRENT_URL=$(oc get deployment/collector -n "$NAMESPACE" \
+		-o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="OIDC_ISSUER_URL")].value}' 2>/dev/null) || :
+	if [[ -z "$CURRENT_URL" ]]; then
+		echo "WARNING: OIDC_ISSUER_URL is empty — the collector OIDC extension will fail to start."
+		echo "  Set OIDC_ISSUER_URL in GitLab CI variables (Settings > CI/CD > Variables)."
+	fi
 fi
 
 # --- Wait for rollouts ---

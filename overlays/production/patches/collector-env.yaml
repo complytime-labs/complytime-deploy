@@ -1,5 +1,7 @@
 # Production collector env vars — S3 config and OIDC issuer.
-# UPDATE: Set OIDC_ISSUER_URL to your production Keycloak/SSO realm URL.
+# OIDC_ISSUER_URL defaults to empty here. Set it via GitLab CI variable
+# (Settings > CI/CD > Variables, scope: production) — post-deploy.sh injects it.
+# Example: https://sso.example.com/realms/complytime
 apiVersion: apps/v1
 kind: Deployment
 metadata:

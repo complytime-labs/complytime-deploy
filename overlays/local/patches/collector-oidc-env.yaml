@@ -1,0 +1,13 @@
+# Patches collector OIDC_ISSUER_URL for Keycloak in CRC environment.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+spec:
+  template:
+    spec:
+      containers:
+        - name: collector
+          env:
+            - name: OIDC_ISSUER_URL
+              value: "http://keycloak:8080/realms/complytime"
