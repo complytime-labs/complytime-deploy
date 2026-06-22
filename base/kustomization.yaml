@@ -8,3 +8,4 @@ resources:
   - collector
   - loki
   - grafana
+  - network-policies

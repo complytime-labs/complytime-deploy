@@ -1,0 +1,9 @@
+# Network policies — restricts pod-to-pod traffic to required paths only.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - collector-netpol.yaml
+  - loki-netpol.yaml
+  - grafana-netpol.yaml
+  - default-deny.yaml

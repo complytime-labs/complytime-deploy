@@ -35,11 +35,23 @@ stages:
         oc login --token="$OPENSHIFT_TOKEN" --server="$OPENSHIFT_SERVER"
       fi
 
-validate:
+validate-stage:
   <<: *deploy-template
   stage: validate
+  environment:
+    name: $CI_ENV_STAGE
   script:
-    - task sk:validate ENV_CHECK=1
+    - task sk:validate ENV_CHECK=1 -- stage
+    - task sk:lint
+
+validate-production:
+  <<: *deploy-template
+  stage: validate
+  environment:
+    name: $CI_ENV_PRODUCTION
+  script:
+    - task sk:validate ENV_CHECK=1 -- production
+    - task sk:lint
 
 .validate-server:
   <<: *deploy-template
@@ -47,8 +59,6 @@ validate:
   rules:
     - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
       when: on_success
-  needs:
-    - validate
   script:
     - oc login --token="$OPENSHIFT_TOKEN" --server="$OPENSHIFT_SERVER"
     - |
@@ -62,6 +72,8 @@ validate:
 
 validate-server-stage:
   extends: .validate-server
+  needs:
+    - validate-stage
   environment:
     name: $CI_ENV_STAGE
   variables:
@@ -69,6 +81,8 @@ validate-server-stage:
 
 validate-server-production:
   extends: .validate-server
+  needs:
+    - validate-production
   environment:
     name: $CI_ENV_PRODUCTION
   variables:

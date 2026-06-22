@@ -1,0 +1,184 @@
+name: NetworkPolicy kustomize build validation
+vars:
+  root: "../.."
+
+testcases:
+  # -- Base: all four policies render ----------------------------------------
+
+  - name: Base kustomize build includes all four network policies
+    steps:
+      - type: exec
+        script: |
+          OUTPUT=$(kustomize build "{{.root}}/base" 2>&1)
+          if [ $? -ne 0 ]; then
+            echo "BUILD_FAILED"
+            exit 1
+          fi
+          echo "$OUTPUT" | grep -c 'kind: NetworkPolicy' | xargs -I{} echo "NETPOL_COUNT={}"
+          echo "$OUTPUT" | grep 'name: default-deny-ingress' >/dev/null && echo "HAS_DEFAULT_DENY=true" || echo "HAS_DEFAULT_DENY=false"
+          echo "$OUTPUT" | grep 'name: allow-collector-ingress' >/dev/null && echo "HAS_COLLECTOR=true" || echo "HAS_COLLECTOR=false"
+          echo "$OUTPUT" | grep 'name: allow-loki-ingress' >/dev/null && echo "HAS_LOKI=true" || echo "HAS_LOKI=false"
+          echo "$OUTPUT" | grep 'name: allow-grafana-ingress' >/dev/null && echo "HAS_GRAFANA=true" || echo "HAS_GRAFANA=false"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "NETPOL_COUNT=4"
+          - result.systemout ShouldContainSubstring "HAS_DEFAULT_DENY=true"
+          - result.systemout ShouldContainSubstring "HAS_COLLECTOR=true"
+          - result.systemout ShouldContainSubstring "HAS_LOKI=true"
+          - result.systemout ShouldContainSubstring "HAS_GRAFANA=true"
+
+  # -- Overlays inherit base policies ----------------------------------------
+
+  - name: Local overlay includes all four network policies
+    steps:
+      - type: exec
+        script: |
+          COUNT=$(kustomize build "{{.root}}/overlays/local" 2>&1 | grep -c 'kind: NetworkPolicy')
+          echo "POLICY_COUNT=${COUNT}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "POLICY_COUNT=4"
+
+  - name: Stage overlay includes all four network policies
+    steps:
+      - type: exec
+        script: |
+          COUNT=$(kustomize build "{{.root}}/overlays/stage" 2>&1 | grep -c 'kind: NetworkPolicy')
+          echo "POLICY_COUNT=${COUNT}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "POLICY_COUNT=4"
+
+  - name: Production overlay includes all four network policies
+    steps:
+      - type: exec
+        script: |
+          COUNT=$(kustomize build "{{.root}}/overlays/production" 2>&1 | grep -c 'kind: NetworkPolicy')
+          echo "POLICY_COUNT=${COUNT}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "POLICY_COUNT=4"
+
+  # -- Default deny targets all pods -----------------------------------------
+
+  - name: Default deny policy has empty podSelector (targets all pods)
+    steps:
+      - type: exec
+        script: |
+          kustomize build "{{.root}}/base" 2>&1 | \
+            python3 -c "
+          import sys, yaml
+          for doc in yaml.safe_load_all(sys.stdin):
+              if doc and doc.get('kind') == 'NetworkPolicy' and doc['metadata']['name'] == 'default-deny-ingress':
+                  ps = doc['spec']['podSelector']
+                  pt = doc['spec'].get('policyTypes', [])
+                  print('SELECTOR_EMPTY=' + ('true' if ps == {} else 'false'))
+                  print('INGRESS_TYPE=' + ('true' if 'Ingress' in pt else 'false'))
+          "
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "SELECTOR_EMPTY=true"
+          - result.systemout ShouldContainSubstring "INGRESS_TYPE=true"
+
+  # -- Loki ingress is restricted to collector and grafana only ---------------
+
+  - name: Loki ingress allows only collector and grafana pods
+    steps:
+      - type: exec
+        script: |
+          kustomize build "{{.root}}/base" 2>&1 | \
+            python3 -c "
+          import sys, yaml
+          for doc in yaml.safe_load_all(sys.stdin):
+              if doc and doc.get('kind') == 'NetworkPolicy' and doc['metadata']['name'] == 'allow-loki-ingress':
+                  rules = doc['spec']['ingress']
+                  sources = []
+                  for rule in rules:
+                      for src in rule.get('from', []):
+                          ps = src.get('podSelector', {}).get('matchLabels', {})
+                          if 'app' in ps:
+                              sources.append(ps['app'])
+                  sources.sort()
+                  print('ALLOWED_APPS=' + ','.join(sources))
+                  ports = []
+                  for rule in rules:
+                      for p in rule.get('ports', []):
+                          ports.append(str(p['port']))
+                  print('ALLOWED_PORTS=' + ','.join(ports))
+          "
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "ALLOWED_APPS=collector,grafana"
+          - result.systemout ShouldContainSubstring "ALLOWED_PORTS=3100"
+
+  # -- Collector ingress allows router and in-namespace pods ------------------
+
+  - name: Collector ingress allows OpenShift router namespace
+    steps:
+      - type: exec
+        script: |
+          kustomize build "{{.root}}/base" 2>&1 | \
+            python3 -c "
+          import sys, yaml
+          for doc in yaml.safe_load_all(sys.stdin):
+              if doc and doc.get('kind') == 'NetworkPolicy' and doc['metadata']['name'] == 'allow-collector-ingress':
+                  rules = doc['spec']['ingress']
+                  has_router = False
+                  has_pod_selector = False
+                  all_ports = set()
+                  for rule in rules:
+                      for src in rule.get('from', []):
+                          ns = src.get('namespaceSelector', {}).get('matchLabels', {})
+                          if ns.get('network.openshift.io/policy-group') == 'ingress':
+                              has_router = True
+                          if 'podSelector' in src and src['podSelector'] == {}:
+                              has_pod_selector = True
+                      for p in rule.get('ports', []):
+                          all_ports.add(p['port'])
+                  print('HAS_ROUTER=' + str(has_router).lower())
+                  print('HAS_POD_SELECTOR=' + str(has_pod_selector).lower())
+                  print('PORT_4317=' + ('true' if 4317 in all_ports else 'false'))
+                  print('PORT_4318=' + ('true' if 4318 in all_ports else 'false'))
+                  print('PORT_8088=' + ('true' if 8088 in all_ports else 'false'))
+          "
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "HAS_ROUTER=true"
+          - result.systemout ShouldContainSubstring "HAS_POD_SELECTOR=true"
+          - result.systemout ShouldContainSubstring "PORT_4317=true"
+          - result.systemout ShouldContainSubstring "PORT_4318=true"
+          - result.systemout ShouldContainSubstring "PORT_8088=true"
+
+  # -- Grafana ingress allows router and in-namespace pods --------------------
+
+  - name: Grafana ingress allows OpenShift router and in-namespace pods on port 3000
+    steps:
+      - type: exec
+        script: |
+          kustomize build "{{.root}}/base" 2>&1 | \
+            python3 -c "
+          import sys, yaml
+          for doc in yaml.safe_load_all(sys.stdin):
+              if doc and doc.get('kind') == 'NetworkPolicy' and doc['metadata']['name'] == 'allow-grafana-ingress':
+                  rules = doc['spec']['ingress']
+                  has_router = False
+                  has_pod_selector = False
+                  all_ports = set()
+                  for rule in rules:
+                      for src in rule.get('from', []):
+                          ns = src.get('namespaceSelector', {}).get('matchLabels', {})
+                          if ns.get('network.openshift.io/policy-group') == 'ingress':
+                              has_router = True
+                          if 'podSelector' in src and src['podSelector'] == {}:
+                              has_pod_selector = True
+                      for p in rule.get('ports', []):
+                          all_ports.add(p['port'])
+                  print('HAS_ROUTER=' + str(has_router).lower())
+                  print('HAS_POD_SELECTOR=' + str(has_pod_selector).lower())
+                  print('PORT_3000=' + ('true' if 3000 in all_ports else 'false'))
+          "
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "HAS_ROUTER=true"
+          - result.systemout ShouldContainSubstring "HAS_POD_SELECTOR=true"
+          - result.systemout ShouldContainSubstring "PORT_3000=true"

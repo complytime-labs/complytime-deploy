@@ -1,0 +1,36 @@
+# Collector ingress — allows OpenShift router and in-namespace pods.
+# Ports: 4317 (gRPC/OTLP), 4318 (HTTP/OTLP), 8088 (webhook HTTPS).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-collector-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: collector
+  policyTypes:
+    - Ingress
+  ingress:
+    # OpenShift router runs in the openshift-ingress namespace.
+    # Allow traffic from router pods on all collector ports.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: ingress
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+        - protocol: TCP
+          port: 8088
+    # Allow in-namespace pods (e.g. test jobs) to reach the collector.
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+        - protocol: TCP
+          port: 8088
