@@ -1,7 +1,7 @@
 # Stage collector env vars — S3 config and OIDC issuer.
-# OIDC_ISSUER_URL defaults to empty here. Set it via GitLab CI variable
-# (Settings > CI/CD > Variables, scope: stage) — post-deploy.sh injects it.
-# Example: https://sso.example.com/realms/complytime
+# OIDC_ISSUER_URL and S3_ENDPOINT are injected from the collector-env ConfigMap,
+# which is created by apply-sealed-secrets.sh from GitLab CI variables.
+# Set both in GitLab CI (Settings > CI/CD > Variables, scope: stage).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,11 +13,19 @@ spec:
         - name: collector
           env:
             - name: OIDC_ISSUER_URL
-              value: ""
+              value: null
+              valueFrom:
+                configMapKeyRef:
+                  name: collector-env
+                  key: OIDC_ISSUER_URL
             - name: LOKI_HOST
               value: "loki"
             - name: S3_ENDPOINT
-              value: ""
+              value: null
+              valueFrom:
+                configMapKeyRef:
+                  name: collector-env
+                  key: S3_ENDPOINT
             - name: S3_BUCKETNAME
               value: "sw-s3-hyperproof"
             - name: S3_OBJ_DIR

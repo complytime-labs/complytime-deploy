@@ -115,6 +115,8 @@ The GitLab CI pipeline uses **environment-scoped variables** to inject different
 | `AWS_SECRET_ACCESS_KEY`      | `production`      | Variable | Yes       | Yes    | AWS secret for prod S3 bucket      |
 | `OIDC_ISSUER_URL`            | `stage`           | Variable | Yes       | No     | OIDC issuer URL for stage          |
 | `OIDC_ISSUER_URL`            | `production`      | Variable | Yes       | No     | OIDC issuer URL for production     |
+| `S3_ENDPOINT`                | `stage`           | Variable | Yes       | No     | S3-compatible endpoint for stage   |
+| `S3_ENDPOINT`                | `production`      | Variable | Yes       | No     | S3-compatible endpoint for prod    |
 | `GRAFANA_OIDC_CLIENT_SECRET` | `stage`           | Variable | Yes       | Yes    | Grafana OIDC client secret (stage) |
 | `GRAFANA_OIDC_CLIENT_SECRET` | `production`      | Variable | Yes       | Yes    | Grafana OIDC client secret (prod)  |
 | `GRAFANA_OIDC_CLIENT_ID`     | `stage`           | Variable | Yes       | No     | Grafana OIDC client ID (stage)     |

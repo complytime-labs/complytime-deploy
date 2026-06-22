@@ -39,7 +39,7 @@ validate:
   <<: *deploy-template
   stage: validate
   script:
-    - task sk:validate
+    - task sk:validate ENV_CHECK=1
 
 .validate-server:
   <<: *deploy-template
