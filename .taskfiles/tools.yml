@@ -38,12 +38,13 @@ tasks:
         task: _install-{{.ITEM}}
 
   install-deploy:
-    desc: "Install all deployment tools (oc, kustomize, skaffold, kubeseal)"
+    desc: "Install all deployment tools (oc, kustomize, skaffold, kubeseal, yq)"
     cmds:
       - task: _install-oc
       - task: _install-kustomize
       - task: _install-skaffold
       - task: _install-kubeseal
+      - task: _install-yq
 
   install-scan:
     desc: "Install all scanning tools (checkov, trivy)"

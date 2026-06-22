@@ -60,6 +60,22 @@ apply_secret() {
 	fi
 }
 
+# --- Helper: create or update a ConfigMap idempotently ---
+apply_configmap() {
+	local name="$1"
+	shift
+
+	if oc get configmap "$name" -n "$NAMESPACE" &>/dev/null; then
+		echo "  $name: exists — updating"
+		"$@" -n "$NAMESPACE" --dry-run=client -o yaml | oc apply -n "$NAMESPACE" -f -
+		UPDATED=$((UPDATED + 1))
+	else
+		echo "  $name: creating"
+		"$@" -n "$NAMESPACE" --dry-run=client -o yaml | oc apply -n "$NAMESPACE" -f -
+		CREATED=$((CREATED + 1))
+	fi
+}
+
 # --- CI mode: create secrets from environment variables ---
 if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
 	echo "Creating secrets from CI variables for $OVERLAY (namespace: $NAMESPACE)..."
@@ -69,6 +85,22 @@ if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
 		oc create secret generic aws-creds \
 		--from-literal=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
 		--from-literal=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+
+	# collector-env (required — OIDC_ISSUER_URL and S3_ENDPOINT must be set)
+	if [[ -z "${OIDC_ISSUER_URL:-}" ]]; then
+		echo "ERROR: OIDC_ISSUER_URL is not set — the collector OIDC extension requires a valid issuer URL."
+		echo "  Set OIDC_ISSUER_URL in GitLab CI variables (Settings > CI/CD > Variables)."
+		exit 1
+	fi
+	if [[ -z "${S3_ENDPOINT:-}" ]]; then
+		echo "ERROR: S3_ENDPOINT is not set — the collector S3 exporter requires an endpoint URL."
+		echo "  Set S3_ENDPOINT in GitLab CI variables (Settings > CI/CD > Variables)."
+		exit 1
+	fi
+	apply_configmap collector-env \
+		oc create configmap collector-env \
+		--from-literal=OIDC_ISSUER_URL="$OIDC_ISSUER_URL" \
+		--from-literal=S3_ENDPOINT="$S3_ENDPOINT"
 
 	# grafana-oidc-secret (optional — only if GRAFANA_OIDC_CLIENT_SECRET is set)
 	if [[ -n "${GRAFANA_OIDC_CLIENT_SECRET:-}" ]]; then
@@ -148,7 +180,7 @@ if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
 	fi
 
 	echo ""
-	echo "Secrets from CI variables: $CREATED created, $UPDATED updated, $SKIPPED skipped"
+	echo "Secrets/ConfigMaps from CI variables: $CREATED created, $UPDATED updated, $SKIPPED skipped"
 	exit 0
 fi
 

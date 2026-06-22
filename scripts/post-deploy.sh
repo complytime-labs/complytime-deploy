@@ -120,24 +120,6 @@ DSPATCH
 	echo "  Grafana datasource CA cert injected"
 fi
 
-# --- OIDC issuer URL injection ---
-# The collector OIDC extension requires a valid issuer URL. When deployed via
-# GitLab CI, the OIDC_ISSUER_URL variable is set in GitLab CI/CD settings.
-# The overlay patch defaults to an empty string; this patches the Deployment
-# with the real value from the CI environment.
-if [[ -n "${OIDC_ISSUER_URL:-}" ]]; then
-	echo "Patching collector with OIDC_ISSUER_URL..."
-	oc set env deployment/collector OIDC_ISSUER_URL="$OIDC_ISSUER_URL" -n "$NAMESPACE"
-	echo "  OIDC_ISSUER_URL set"
-else
-	CURRENT_URL=$(oc get deployment/collector -n "$NAMESPACE" \
-		-o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="OIDC_ISSUER_URL")].value}' 2>/dev/null) || :
-	if [[ -z "$CURRENT_URL" ]]; then
-		echo "WARNING: OIDC_ISSUER_URL is empty — the collector OIDC extension will fail to start."
-		echo "  Set OIDC_ISSUER_URL in GitLab CI variables (Settings > CI/CD > Variables)."
-	fi
-fi
-
 # --- Grafana OIDC client ID injection ---
 # The Grafana Generic OAuth integration requires a client ID registered with
 # the OIDC provider.  The overlay patch defaults to an empty string; this

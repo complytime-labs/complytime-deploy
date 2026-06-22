@@ -50,6 +50,9 @@ tasks:
     cmds:
       - crc status
       - silent: true
+        cmd: crc console --credentials
+        ignore_error: true
+      - silent: true
         cmd: |
           printf '\nSealedSecrets controller: '
           if oc -n kube-system get deployment/sealed-secrets-controller -o jsonpath='{.status.availableReplicas}' 2>/dev/null | grep -q '^[1-9]'; then

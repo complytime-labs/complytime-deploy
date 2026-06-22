@@ -36,6 +36,7 @@ tasks:
       - task: :tools:_install-venom
       - task: _ensure-sealed-secrets
       - task: deploy-if-needed
+      - task: _grant-developer-access
       - task: _ensure-bucket
       - task: extract-ca
       - task: port-forward
@@ -50,6 +51,13 @@ tasks:
           systemctl --user list-units 'complytime-*.service' --no-pager --plain \
             | grep -q 'running'
         else
+          # Non-admin users cannot deploy — treat as up-to-date so the
+          # deploy path is never entered.  The _deploy-crc guard will
+          # catch any accidental invocation as a safety net.
+          CURRENT_USER="$(oc whoami 2>/dev/null || true)"
+          if [ "$CURRENT_USER" != "kubeadmin" ] && [ "$CURRENT_USER" != "system:admin" ]; then
+            exit 0
+          fi
           oc get pods -n "{{._NS}}" 2>/dev/null | grep -q Running
         fi
     cmds:
@@ -75,12 +83,45 @@ tasks:
       - '[ "{{.MODE}}" = "quadlet" ]'
     cmds:
       - |
+        # Deploying requires kubeadmin (oc new-project, secret creation, route patching).
+        # If a non-admin user reaches this point it means the stack is not running and
+        # they cannot deploy it — fail early with a clear message.
+        CURRENT_USER="$(oc whoami 2>/dev/null || true)"
+        if [ "$CURRENT_USER" != "kubeadmin" ] && [ "$CURRENT_USER" != "system:admin" ]; then
+          echo "ERROR: Stack is not deployed and deploying requires kubeadmin."
+          echo "  Current user: ${CURRENT_USER:-<not logged in>}"
+          echo "  Run as kubeadmin first:  task integration:setup"
+          echo "  Then re-run tests as developer:  task integration:test"
+          exit 1
+        fi
+      - |
         if [ "{{._NS}}" != "{{.DEFAULT_NAMESPACE}}" ]; then
           task sk:_generate-overlay NAMESPACE="{{._NS}}" BASE="{{.BASE}}"
         fi
       - task: :sk:_deploy
         vars:
           NAMESPACE: "{{if ne ._NS .DEFAULT_NAMESPACE}}{{._NS}}{{end}}"
+
+  _grant-developer-access:
+    desc: Grant the CRC developer user edit access to the test namespace
+    internal: true
+    cmds:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          exit 0
+        fi
+        CURRENT_USER="$(oc whoami 2>/dev/null || true)"
+        if [ "$CURRENT_USER" != "kubeadmin" ] && [ "$CURRENT_USER" != "system:admin" ]; then
+          exit 0
+        fi
+        # Idempotent — no error if the rolebinding already exists.
+        if oc adm policy add-role-to-user edit developer -n "{{._NS}}" 2>/dev/null; then
+          echo "OK: granted 'edit' role to 'developer' in namespace {{._NS}}"
+        else
+          echo "WARNING: could not grant developer access to {{._NS}}"
+          echo "  The developer user may not be able to run tests in this namespace."
+          echo "  Grant manually:  oc adm policy add-role-to-user edit developer -n {{._NS}}"
+        fi
 
   _ensure-bucket:
     desc: Create S3 bucket with anonymous read access
