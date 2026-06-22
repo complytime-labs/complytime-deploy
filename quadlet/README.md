@@ -63,20 +63,46 @@ task quadlet:start
 
 ## Service Architecture
 
-```
-  localhost:4318 (OTLP HTTP)
-  localhost:8088 (Webhook)
-       |
-       v
-  complytime-collector
-       |
-       v
-  complytime-loki <---------- complytime-grafana
-                                localhost:3000
-       |
-       v
-  complytime-rustfs (S3)
-  localhost:9000/9001
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {
+  'primaryColor': '#2f6dab',
+  'primaryTextColor': '#1e1e1e',
+  'primaryBorderColor': '#7c8ba1',
+  'lineColor': '#7c8ba1',
+  'edgeLabelBackground': '#eef2f8',
+  'tertiaryColor': 'transparent',
+  'tertiaryTextColor': '#7c8ba1',
+  'tertiaryBorderColor': '#7c8ba1',
+  'clusterBkg': 'transparent',
+  'clusterBorder': '#7c8ba1',
+  'titleColor': '#7c8ba1',
+  'noteBkgColor': '#eef2f8',
+  'noteTextColor': '#1e1e1e',
+  'fontFamily': 'system-ui, sans-serif'
+}, 'themeCSS': '.node .nodeLabel{color:#ffffff!important;fill:#ffffff!important;}'}}%%
+flowchart TD
+  otlp["localhost:4318 OTLP HTTP"]
+  webhook["localhost:8088 Webhook"]
+  collector["complytime-collector"]
+  loki["complytime-loki"]
+  grafana["complytime-grafana\nlocalhost:3000"]
+  rustfs["complytime-rustfs\nlocalhost:9000/9001"]
+
+  otlp --> collector
+  webhook --> collector
+  collector --> loki
+  collector --> rustfs
+  grafana -->|queries logs| loki
+
+  classDef sysA fill:#2f6dab,color:#ffffff,stroke:#7c8ba1
+  classDef sysB fill:#1d7848,color:#ffffff,stroke:#7c8ba1
+  classDef sysC fill:#7457b8,color:#ffffff,stroke:#7c8ba1
+  classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
+  class otlp,webhook sysD
+  class collector sysA
+  class loki sysB
+  class grafana sysC
+  class rustfs sysD
 ```
 
 All containers run on a shared `complytime` Podman network with DNS resolution by container name. RustFS provides S3-compatible object storage for evidence export.
@@ -210,3 +236,7 @@ task quadlet:teardown
 task quadlet:setup -- --no-tls
 task quadlet:start
 ```
+
+## See Also
+
+- Main project README and OpenShift deployment: [README.md](../README.md)
