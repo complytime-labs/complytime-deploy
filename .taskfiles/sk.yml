@@ -291,7 +291,7 @@ tasks:
               continue
             fi
             # Check that the key is included
-            if ! grep -A 20 "oc create configmap ${cm_name}" "$script" | grep -q "\-\-from-literal=${cm_key}="; then
+            if ! grep -A 20 "oc create configmap ${cm_name}" "$script" | grep -qF -- "--from-literal=${cm_key}="; then
               errors="${errors}${errors:+\n}ERROR: ${profile}: ConfigMap '${cm_name}' missing key '${cm_key}' in apply-sealed-secrets.sh"
             fi
           done
@@ -305,7 +305,7 @@ tasks:
               continue
             fi
             # Check that the key is included
-            if ! grep -A 20 "oc create secret generic ${secret_name}" "$script" | grep -q "\-\-from-literal=${secret_key}=\|--from-file=${secret_key}="; then
+            if ! grep -A 20 "oc create secret generic ${secret_name}" "$script" | grep -qE -- "--from-literal=${secret_key}=|--from-file=${secret_key}="; then
               errors="${errors}${errors:+\n}ERROR: ${profile}: Secret '${secret_name}' missing key '${secret_key}' in apply-sealed-secrets.sh"
             fi
           done

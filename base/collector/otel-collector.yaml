@@ -1,5 +1,10 @@
 # Production collector config — full auth (OIDC, JWT).
 # Hostnames injected via OTel ${env:VAR} substitution.
+#
+# Pipelines:
+#   logs/analysis_pipeline — compliance evaluation ingest, transform, export to Loki + S3
+#   metrics — signaltometrics-derived compliance counters (debug exporter until
+#             beacon-collector ships with prometheusexporter; see FOO.md)
 extensions:
   oidc:
     issuer_url: ${env:OIDC_ISSUER_URL}
@@ -121,6 +126,8 @@ connectors:
           value: "1"
 
 exporters:
+  debug:
+    verbosity: basic
   otlphttp/logs:
     endpoint: "https://${env:LOKI_HOST}:3100/otlp"
     # Using OTLP HTTP exporter with HTTPS and OpenShift Service CA certificates
@@ -152,14 +159,10 @@ service:
       level: info
   extensions: [oidc]
   pipelines:
-    traces:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: []
     metrics:
       receivers: [otlp, signaltometrics]
       processors: [batch]
-      exporters: []
+      exporters: [debug]
     logs/analysis_pipeline:
       receivers: [webhookevent, otlp]
       processors: [batch, transform/ocsf]

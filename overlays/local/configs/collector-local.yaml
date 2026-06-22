@@ -144,10 +144,6 @@ service:
     logs:
       level: debug
   pipelines:
-    traces:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [debug]
     metrics:
       receivers: [otlp, signaltometrics]
       processors: [batch]
