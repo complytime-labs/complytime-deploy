@@ -10,8 +10,8 @@
 #
 # Before deploying, update:
 #   - routes.yaml: Set spec.host to your production CNAMEs
-#   - patches/collector-env.yaml: Set OIDC_ISSUER_URL
-#   - patches/grafana-env.yaml: Set OIDC client ID, auth URLs, root URL
+#   - patches/collector-env.yaml: OIDC_ISSUER_URL, S3_ENDPOINT from collector-env ConfigMap
+#   - patches/grafana-env.yaml: OIDC + root URL from grafana-env ConfigMap, admin password from grafana-admin-secret
 #   - sealed-secrets/: Create SealedSecrets (see sealed-secrets/README.md)
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

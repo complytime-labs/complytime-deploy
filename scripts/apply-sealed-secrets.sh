@@ -102,13 +102,52 @@ if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
 		--from-literal=OIDC_ISSUER_URL="$OIDC_ISSUER_URL" \
 		--from-literal=S3_ENDPOINT="$S3_ENDPOINT"
 
-	# grafana-oidc-secret (optional — only if GRAFANA_OIDC_CLIENT_SECRET is set)
-	if [[ -n "${GRAFANA_OIDC_CLIENT_SECRET:-}" ]]; then
+	# grafana-env (always created — OIDC is enabled only when client ID is set)
+	# These use Grafana's native GF_* env var names.
+	# See: https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/
+	if [[ -n "${GF_AUTH_GENERIC_OAUTH_CLIENT_ID:-}" ]]; then
+		GRAFANA_OAUTH_ENABLED="true"
+		GRAFANA_ENV_WARNINGS=""
+		for gf_var in GF_AUTH_GENERIC_OAUTH_AUTH_URL GF_AUTH_GENERIC_OAUTH_TOKEN_URL \
+			GF_AUTH_GENERIC_OAUTH_API_URL GF_AUTH_SIGNOUT_REDIRECT_URL GF_SERVER_ROOT_URL; do
+			if [[ -z "${!gf_var:-}" ]]; then
+				GRAFANA_ENV_WARNINGS="${GRAFANA_ENV_WARNINGS}  WARNING: $gf_var is not set — Grafana OIDC may not work correctly.\n"
+			fi
+		done
+		if [[ -n "$GRAFANA_ENV_WARNINGS" ]]; then
+			printf '%b' "$GRAFANA_ENV_WARNINGS"
+		fi
+	else
+		GRAFANA_OAUTH_ENABLED="false"
+		echo "  GF_AUTH_GENERIC_OAUTH_CLIENT_ID not set — OIDC disabled"
+	fi
+	apply_configmap grafana-env \
+		oc create configmap grafana-env \
+		--from-literal=GF_AUTH_GENERIC_OAUTH_ENABLED="$GRAFANA_OAUTH_ENABLED" \
+		--from-literal=GF_AUTH_GENERIC_OAUTH_CLIENT_ID="${GF_AUTH_GENERIC_OAUTH_CLIENT_ID:-}" \
+		--from-literal=GF_AUTH_GENERIC_OAUTH_AUTH_URL="${GF_AUTH_GENERIC_OAUTH_AUTH_URL:-}" \
+		--from-literal=GF_AUTH_GENERIC_OAUTH_TOKEN_URL="${GF_AUTH_GENERIC_OAUTH_TOKEN_URL:-}" \
+		--from-literal=GF_AUTH_GENERIC_OAUTH_API_URL="${GF_AUTH_GENERIC_OAUTH_API_URL:-}" \
+		--from-literal=GF_AUTH_SIGNOUT_REDIRECT_URL="${GF_AUTH_SIGNOUT_REDIRECT_URL:-}" \
+		--from-literal=GF_SERVER_ROOT_URL="${GF_SERVER_ROOT_URL:-}"
+
+	# grafana-admin-secret (required — do not deploy with default admin:admin)
+	if [[ -z "${GF_SECURITY_ADMIN_PASSWORD:-}" ]]; then
+		echo "ERROR: GF_SECURITY_ADMIN_PASSWORD is not set — refusing to deploy Grafana with default admin credentials."
+		echo "  Set GF_SECURITY_ADMIN_PASSWORD in GitLab CI variables (Settings > CI/CD > Variables)."
+		exit 1
+	fi
+	apply_secret grafana-admin-secret \
+		oc create secret generic grafana-admin-secret \
+		--from-literal=admin_password="$GF_SECURITY_ADMIN_PASSWORD"
+
+	# grafana-oidc-secret (optional — only if GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET is set)
+	if [[ -n "${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:-}" ]]; then
 		apply_secret grafana-oidc-secret \
 			oc create secret generic grafana-oidc-secret \
-			--from-literal=client_secret="$GRAFANA_OIDC_CLIENT_SECRET"
+			--from-literal=client_secret="$GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET"
 	else
-		echo "  grafana-oidc-secret: GRAFANA_OIDC_CLIENT_SECRET not set — skipping"
+		echo "  grafana-oidc-secret: GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET not set — skipping"
 		SKIPPED=$((SKIPPED + 1))
 	fi
 

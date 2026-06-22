@@ -5,8 +5,8 @@ set -euo pipefail
 # for local CRC testing.
 # Usage: ensure-sealed-secrets.sh <namespace>
 #
-# For each of the 4 required secrets (aws-creds, grafana-oidc-secret,
-# quay-io-pull-secret, route-tls-certs), this script:
+# For each of the 5 required secrets (aws-creds, grafana-oidc-secret,
+# grafana-admin-secret, quay-io-pull-secret, route-tls-certs), this script:
 #   1. Checks if the secret already exists — skips if so
 #   2. Creates a plaintext secret (dry-run)
 #   3. Pipes through kubeseal to encrypt
@@ -192,6 +192,37 @@ else
 	echo "  collector-env: created"
 	CREATED=$((CREATED + 1))
 fi
+
+# --- 6. grafana-env ConfigMap (plain ConfigMap, not a SealedSecret) ---
+# Stage/production overlays reference this ConfigMap via configMapKeyRef for
+# Grafana OIDC env vars and root URL.  For local CRC testing, use dev
+# placeholder values (Grafana uses anonymous auth locally, so these don't
+# matter functionally).
+if oc get configmap grafana-env -n "$NAMESPACE" &>/dev/null; then
+	echo "  grafana-env: already exists — skipping"
+	SKIPPED=$((SKIPPED + 1))
+else
+	echo "  grafana-env: creating ConfigMap with dev values..."
+	oc create configmap grafana-env \
+		--from-literal=GF_AUTH_GENERIC_OAUTH_ENABLED="false" \
+		--from-literal=GF_AUTH_GENERIC_OAUTH_CLIENT_ID="not-configured" \
+		--from-literal=GF_AUTH_GENERIC_OAUTH_AUTH_URL="https://not-configured.example.com/auth" \
+		--from-literal=GF_AUTH_GENERIC_OAUTH_TOKEN_URL="https://not-configured.example.com/token" \
+		--from-literal=GF_AUTH_GENERIC_OAUTH_API_URL="https://not-configured.example.com/userinfo" \
+		--from-literal=GF_AUTH_SIGNOUT_REDIRECT_URL="https://not-configured.example.com/logout" \
+		--from-literal=GF_SERVER_ROOT_URL="https://grafana-dev.example.com" \
+		-n "$NAMESPACE"
+	echo "  grafana-env: created"
+	CREATED=$((CREATED + 1))
+fi
+
+# --- 7. grafana-admin-secret ---
+# Admin password for non-local environments.  For local dev, use the
+# Grafana default (admin/admin) — sealed so it exists for overlays that
+# reference it with optional: true.
+seal_and_apply grafana-admin-secret \
+	oc create secret generic grafana-admin-secret \
+	--from-literal=admin_password=admin
 
 echo ""
 echo "SealedSecrets/ConfigMaps: $CREATED created, $SKIPPED already existed"
