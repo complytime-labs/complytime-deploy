@@ -1,0 +1,27 @@
+# Grafana ingress — allows OpenShift router for browser access.
+# Port: 3000 (HTTPS).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-grafana-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Ingress
+  ingress:
+    # OpenShift router runs in the openshift-ingress namespace.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: ingress
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Allow in-namespace pods (e.g. test jobs) to reach Grafana.
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000

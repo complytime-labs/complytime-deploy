@@ -156,12 +156,13 @@ tasks:
       - echo "Rendered all profiles to {{.RENDER_DIR}}/"
 
   validate:
-    desc: "Validate all Skaffold profiles (render check; ENV_CHECK=1 to audit env vars)"
+    desc: "Validate Skaffold profiles (render check; ENV_CHECK=1 to audit env vars; pass profile name to validate single profile)"
     vars:
       ENV_CHECK: '{{.ENV_CHECK | default "0"}}'
     cmds:
       - |
         env_check="{{.ENV_CHECK}}"
+        profile="{{.CLI_ARGS}}"
         tmpdir=""
         cleanup() { [ -n "$tmpdir" ] && rm -rf "$tmpdir"; }
         trap cleanup EXIT
@@ -174,24 +175,42 @@ tasks:
           tmpdir=$(mktemp -d)
         fi
 
-        # --- Render all profiles ---
-        echo "Rendering default (local)..." && skaffold render -v error > /dev/null
-
-        task sk:_generate-overlay NAMESPACE=complytime-stage BASE=stage APPCODE="{{.APPCODE}}"
-        echo "Rendering stage..."
-        if [ "$env_check" = "1" ]; then
-          skaffold render -v error -f overlays/custom-complytime-stage/skaffold.yaml > "$tmpdir/stage.yaml"
+        # Determine which profiles to render
+        if [ -n "$profile" ]; then
+          profiles="$profile"
         else
-          skaffold render -v error -f overlays/custom-complytime-stage/skaffold.yaml > /dev/null
+          profiles="local stage production"
         fi
 
-        task sk:_generate-overlay NAMESPACE=complytime-prod BASE=production APPCODE="{{.APPCODE}}"
-        echo "Rendering production..."
-        if [ "$env_check" = "1" ]; then
-          skaffold render -v error -f overlays/custom-complytime-prod/skaffold.yaml > "$tmpdir/production.yaml"
-        else
-          skaffold render -v error -f overlays/custom-complytime-prod/skaffold.yaml > /dev/null
-        fi
+        for p in $profiles; do
+          case "$p" in
+            local)
+              echo "Rendering default (local)..." && skaffold render -v error > /dev/null
+              ;;
+            stage)
+              task sk:_generate-overlay NAMESPACE=complytime-stage BASE=stage APPCODE="{{.APPCODE}}"
+              echo "Rendering stage..."
+              if [ "$env_check" = "1" ]; then
+                skaffold render -v error -f overlays/custom-complytime-stage/skaffold.yaml > "$tmpdir/stage.yaml"
+              else
+                skaffold render -v error -f overlays/custom-complytime-stage/skaffold.yaml > /dev/null
+              fi
+              ;;
+            production)
+              task sk:_generate-overlay NAMESPACE=complytime-prod BASE=production APPCODE="{{.APPCODE}}"
+              echo "Rendering production..."
+              if [ "$env_check" = "1" ]; then
+                skaffold render -v error -f overlays/custom-complytime-prod/skaffold.yaml > "$tmpdir/production.yaml"
+              else
+                skaffold render -v error -f overlays/custom-complytime-prod/skaffold.yaml > /dev/null
+              fi
+              ;;
+            *)
+              echo "ERROR: Unknown profile: $p (expected: local, stage, production)"
+              exit 1
+              ;;
+          esac
+        done
 
         echo "All profiles rendered successfully"
 
@@ -202,7 +221,11 @@ tasks:
 
         echo "Checking env vars..."
         errors=""
-        for profile in stage production; do
+        for p in $profiles; do
+          # Skip local — no env var audit needed for dev overlay
+          [ "$p" = "local" ] && continue
+          # Only audit profiles that were rendered to tmpdir
+          [ ! -f "$tmpdir/${p}.yaml" ] && continue
           empty_vars=$(yq eval '
             select(.kind == "Deployment") |
             .metadata.name as $deploy |
@@ -211,17 +234,89 @@ tasks:
             .env[] |
             select(.value == "" and (has("valueFrom") | not)) |
             $deploy + "/" + $container + ": " + .name
-          ' "$tmpdir/${profile}.yaml" | grep -v '^---$' || true)
+          ' "$tmpdir/${p}.yaml" | grep -v '^---$' || true)
           if [ -n "$empty_vars" ]; then
-            errors="${errors}${errors:+\n}ERROR: ${profile} has empty env vars that must be configured:\n$(echo "$empty_vars" | sed 's/^/  /')\n  Update: overlays/${profile}/patches/"
+            errors="${errors}${errors:+\n}ERROR: ${p} has empty env vars that must be configured:\n$(echo "$empty_vars" | sed 's/^/  /')\n  Update: overlays/${p}/patches/"
           else
-            echo "  ${profile}: all env vars populated"
+            echo "  ${p}: all env vars populated"
           fi
         done
         if [ -n "$errors" ]; then
           printf '\n%b\n' "$errors"
           exit 1
         fi
+
+  lint:
+    desc: "Verify rendered ConfigMap/Secret references match apply-sealed-secrets.sh"
+    cmds:
+      - |
+        tmpdir=$(mktemp -d)
+        cleanup() { rm -rf "$tmpdir"; }
+        trap cleanup EXIT
+
+        # Render stage and production profiles
+        task sk:_generate-overlay NAMESPACE=complytime-stage BASE=stage APPCODE="{{.APPCODE}}"
+        skaffold render -v error -f overlays/custom-complytime-stage/skaffold.yaml > "$tmpdir/stage.yaml"
+
+        task sk:_generate-overlay NAMESPACE=complytime-prod BASE=production APPCODE="{{.APPCODE}}"
+        skaffold render -v error -f overlays/custom-complytime-prod/skaffold.yaml > "$tmpdir/production.yaml"
+
+        script="{{.ROOT_DIR}}/scripts/apply-sealed-secrets.sh"
+        errors=""
+
+        for profile in stage production; do
+          # Extract configMapKeyRef references: configmap-name/key-name
+          cm_refs=$(yq eval '
+            select(.kind == "Deployment") |
+            .spec.template.spec.containers[].env[] |
+            select(.valueFrom.configMapKeyRef) |
+            .valueFrom.configMapKeyRef.name + "/" + .valueFrom.configMapKeyRef.key
+          ' "$tmpdir/${profile}.yaml" | grep -v '^---$' | sort -u || true)
+
+          # Extract required secretKeyRef references (exclude optional: true)
+          secret_refs=$(yq eval '
+            select(.kind == "Deployment") |
+            .spec.template.spec.containers[].env[] |
+            select(.valueFrom.secretKeyRef) |
+            select(.valueFrom.secretKeyRef.optional != true) |
+            .valueFrom.secretKeyRef.name + "/" + .valueFrom.secretKeyRef.key
+          ' "$tmpdir/${profile}.yaml" | grep -v '^---$' | sort -u || true)
+
+          for ref in $cm_refs; do
+            cm_name="${ref%%/*}"
+            cm_key="${ref##*/}"
+            # Check that script creates this ConfigMap
+            if ! grep -q "oc create configmap ${cm_name}" "$script"; then
+              errors="${errors}${errors:+\n}ERROR: ${profile}: ConfigMap '${cm_name}' referenced in manifests but not created by apply-sealed-secrets.sh"
+              continue
+            fi
+            # Check that the key is included
+            if ! grep -A 20 "oc create configmap ${cm_name}" "$script" | grep -q "\-\-from-literal=${cm_key}="; then
+              errors="${errors}${errors:+\n}ERROR: ${profile}: ConfigMap '${cm_name}' missing key '${cm_key}' in apply-sealed-secrets.sh"
+            fi
+          done
+
+          for ref in $secret_refs; do
+            secret_name="${ref%%/*}"
+            secret_key="${ref##*/}"
+            # Check that script creates this Secret
+            if ! grep -q "oc create secret generic ${secret_name}" "$script"; then
+              errors="${errors}${errors:+\n}ERROR: ${profile}: Secret '${secret_name}' referenced in manifests but not created by apply-sealed-secrets.sh"
+              continue
+            fi
+            # Check that the key is included
+            if ! grep -A 20 "oc create secret generic ${secret_name}" "$script" | grep -q "\-\-from-literal=${secret_key}=\|--from-file=${secret_key}="; then
+              errors="${errors}${errors:+\n}ERROR: ${profile}: Secret '${secret_name}' missing key '${secret_key}' in apply-sealed-secrets.sh"
+            fi
+          done
+        done
+
+        if [ -n "$errors" ]; then
+          echo "Lint sync check FAILED:"
+          printf '%b\n' "$errors"
+          exit 1
+        fi
+        echo "Lint sync check passed — all ConfigMap/Secret references match apply-sealed-secrets.sh"
 
   status:
     desc: Show pod status in the deployment namespace

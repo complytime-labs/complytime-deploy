@@ -124,40 +124,71 @@ The pre-deploy script (`scripts/apply-sealed-secrets.sh`) detects which mode to 
 
 The GitLab CI pipeline uses **environment-scoped variables** to inject different secret values per deployment target. Each deploy job declares an `environment:` (`stage` or `production`), and GitLab resolves variables scoped to that environment.
 
+Grafana CI variables use the native `GF_*` naming convention documented in the [Grafana configuration reference](https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/) and the [Generic OAuth authentication guide](https://grafana.com/docs/grafana/latest/setup-grafana/configure-access/configure-authentication/generic-oauth/).
+
 **Required CI variables** (Settings > CI/CD > Variables):
 
-| Variable                     | Environment Scope | Type     | Protected | Masked | Purpose                            |
-|------------------------------|-------------------|----------|-----------|--------|------------------------------------|
-| `OPENSHIFT_SERVER`           | `stage`           | Variable | Yes       | No     | Stage cluster API URL              |
-| `OPENSHIFT_TOKEN`            | `stage`           | Variable | Yes       | Yes    | Stage deployer SA token            |
-| `OPENSHIFT_SERVER`           | `production`      | Variable | Yes       | No     | Production cluster API URL         |
-| `OPENSHIFT_TOKEN`            | `production`      | Variable | Yes       | Yes    | Production deployer SA token       |
-| `AWS_ACCESS_KEY_ID`          | `stage`           | Variable | Yes       | No     | AWS key for stage S3 bucket        |
-| `AWS_SECRET_ACCESS_KEY`      | `stage`           | Variable | Yes       | Yes    | AWS secret for stage S3 bucket     |
-| `AWS_ACCESS_KEY_ID`          | `production`      | Variable | Yes       | No     | AWS key for prod S3 bucket         |
-| `AWS_SECRET_ACCESS_KEY`      | `production`      | Variable | Yes       | Yes    | AWS secret for prod S3 bucket      |
-| `OIDC_ISSUER_URL`            | `stage`           | Variable | Yes       | No     | OIDC issuer URL for stage          |
-| `OIDC_ISSUER_URL`            | `production`      | Variable | Yes       | No     | OIDC issuer URL for production     |
-| `S3_ENDPOINT`                | `stage`           | Variable | Yes       | No     | S3-compatible endpoint for stage   |
-| `S3_ENDPOINT`                | `production`      | Variable | Yes       | No     | S3-compatible endpoint for prod    |
-| `GRAFANA_OIDC_CLIENT_SECRET` | `stage`           | Variable | Yes       | Yes    | Grafana OIDC client secret (stage) |
-| `GRAFANA_OIDC_CLIENT_SECRET` | `production`      | Variable | Yes       | Yes    | Grafana OIDC client secret (prod)  |
-| `GRAFANA_OIDC_CLIENT_ID`     | `stage`           | Variable | Yes       | No     | Grafana OIDC client ID (stage)     |
-| `GRAFANA_OIDC_CLIENT_ID`     | `production`      | Variable | Yes       | No     | Grafana OIDC client ID (prod)      |
-| `GRAFANA_ADMIN_PASSWORD`     | `stage`           | Variable | Yes       | Yes    | Grafana admin password (stage)     |
-| `GRAFANA_ADMIN_PASSWORD`     | `production`      | Variable | Yes       | Yes    | Grafana admin password (prod)      |
-| `QUAY_DOCKER_CONFIG_JSON`    | `stage`           | Variable | Yes       | Yes    | Quay pull secret JSON (stage)      |
-| `QUAY_DOCKER_CONFIG_JSON`    | `production`      | Variable | Yes       | Yes    | Quay pull secret JSON (prod)       |
-| `ROUTE_TLS_COLLECTOR_CRT`    | `stage`           | Variable | Yes       | No     | Collector Route TLS cert (base64)  |
-| `ROUTE_TLS_COLLECTOR_CRT`    | `production`      | Variable | Yes       | No     | Collector Route TLS cert (base64)  |
-| `ROUTE_TLS_COLLECTOR_KEY`    | `stage`           | Variable | Yes       | Yes    | Collector Route TLS key (base64)   |
-| `ROUTE_TLS_COLLECTOR_KEY`    | `production`      | Variable | Yes       | Yes    | Collector Route TLS key (base64)   |
-| `ROUTE_TLS_GRAFANA_CRT`      | `stage`           | Variable | Yes       | No     | Grafana Route TLS cert (base64)    |
-| `ROUTE_TLS_GRAFANA_CRT`      | `production`      | Variable | Yes       | No     | Grafana Route TLS cert (base64)    |
-| `ROUTE_TLS_GRAFANA_KEY`      | `stage`           | Variable | Yes       | Yes    | Grafana Route TLS key (base64)     |
-| `ROUTE_TLS_GRAFANA_KEY`      | `production`      | Variable | Yes       | Yes    | Grafana Route TLS key (base64)     |
-| `ROUTE_TLS_CA_CHAIN`         | `stage`           | Variable | Yes       | No     | CA chain for Route TLS (base64)    |
-| `ROUTE_TLS_CA_CHAIN`         | `production`      | Variable | Yes       | No     | CA chain for Route TLS (base64)    |
+| Variable                     | Environment Scope | Type     | Protected | Masked | Purpose                          |
+|------------------------------|-------------------|----------|-----------|--------|----------------------------------|
+| `OPENSHIFT_SERVER`           | `stage`           | Variable | Yes       | No     | Stage cluster API URL            |
+| `OPENSHIFT_TOKEN`            | `stage`           | Variable | Yes       | Yes    | Stage deployer SA token          |
+| `OPENSHIFT_SERVER`           | `production`      | Variable | Yes       | No     | Production cluster API URL       |
+| `OPENSHIFT_TOKEN`            | `production`      | Variable | Yes       | Yes    | Production deployer SA token     |
+| `AWS_ACCESS_KEY_ID`          | `stage`           | Variable | Yes       | No     | AWS key for stage S3 bucket      |
+| `AWS_SECRET_ACCESS_KEY`      | `stage`           | Variable | Yes       | Yes    | AWS secret for stage S3 bucket   |
+| `AWS_ACCESS_KEY_ID`          | `production`      | Variable | Yes       | No     | AWS key for prod S3 bucket       |
+| `AWS_SECRET_ACCESS_KEY`      | `production`      | Variable | Yes       | Yes    | AWS secret for prod S3 bucket    |
+| `OIDC_ISSUER_URL`            | `stage`           | Variable | Yes       | No     | OIDC issuer URL for stage        |
+| `OIDC_ISSUER_URL`            | `production`      | Variable | Yes       | No     | OIDC issuer URL for production   |
+| `S3_ENDPOINT`                | `stage`           | Variable | Yes       | No     | S3-compatible endpoint for stage |
+| `S3_ENDPOINT`                | `production`      | Variable | Yes       | No     | S3-compatible endpoint for prod  |
+| `GF_SECURITY_ADMIN_PASSWORD` | `stage`           | Variable | Yes       | Yes    | Grafana admin password (stage)   |
+| `GF_SECURITY_ADMIN_PASSWORD` | `production`      | Variable | Yes       | Yes    | Grafana admin password (prod)    |
+
+**Optional CI variables:**
+
+The following variable groups are each gated on a single key. If the gate variable is set, all variables in its group should also be set. If the gate is absent, the feature is skipped gracefully.
+
+*Grafana OIDC* -- gated on `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`. When absent, OIDC is disabled and Grafana uses local auth.
+
+| Variable                              | Environment Scope | Type     | Protected | Masked | Purpose                    |
+|---------------------------------------|-------------------|----------|-----------|--------|----------------------------|
+| `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`     | `stage`           | Variable | Yes       | No     | Grafana OIDC client ID     |
+| `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`     | `production`      | Variable | Yes       | No     | Grafana OIDC client ID     |
+| `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` | `stage`           | Variable | Yes       | Yes    | Grafana OIDC client secret |
+| `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` | `production`      | Variable | Yes       | Yes    | Grafana OIDC client secret |
+| `GF_AUTH_GENERIC_OAUTH_AUTH_URL`      | `stage`           | Variable | Yes       | No     | OIDC authorization URL     |
+| `GF_AUTH_GENERIC_OAUTH_AUTH_URL`      | `production`      | Variable | Yes       | No     | OIDC authorization URL     |
+| `GF_AUTH_GENERIC_OAUTH_TOKEN_URL`     | `stage`           | Variable | Yes       | No     | OIDC token URL             |
+| `GF_AUTH_GENERIC_OAUTH_TOKEN_URL`     | `production`      | Variable | Yes       | No     | OIDC token URL             |
+| `GF_AUTH_GENERIC_OAUTH_API_URL`       | `stage`           | Variable | Yes       | No     | OIDC userinfo URL          |
+| `GF_AUTH_GENERIC_OAUTH_API_URL`       | `production`      | Variable | Yes       | No     | OIDC userinfo URL          |
+| `GF_AUTH_SIGNOUT_REDIRECT_URL`        | `stage`           | Variable | Yes       | No     | Post-signout redirect URL  |
+| `GF_AUTH_SIGNOUT_REDIRECT_URL`        | `production`      | Variable | Yes       | No     | Post-signout redirect URL  |
+| `GF_SERVER_ROOT_URL`                  | `stage`           | Variable | Yes       | No     | Grafana public root URL    |
+| `GF_SERVER_ROOT_URL`                  | `production`      | Variable | Yes       | No     | Grafana public root URL    |
+
+*Quay pull secret* -- gated on `QUAY_DOCKER_CONFIG_JSON`. When absent, no pull secret is created (images must be public or pulled another way).
+
+| Variable                  | Environment Scope | Type     | Protected | Masked | Purpose               |
+|---------------------------|-------------------|----------|-----------|--------|-----------------------|
+| `QUAY_DOCKER_CONFIG_JSON` | `stage`           | Variable | Yes       | Yes    | Quay pull secret JSON |
+| `QUAY_DOCKER_CONFIG_JSON` | `production`      | Variable | Yes       | Yes    | Quay pull secret JSON |
+
+*Route TLS certificates* -- gated on `ROUTE_TLS_COLLECTOR_CRT`. When absent, Routes use default OpenShift router certs. All 5 variables are required together if any is set. Values must be **base64-encoded** PEM content.
+
+| Variable                  | Environment Scope | Type     | Protected | Masked | Purpose                           |
+|---------------------------|-------------------|----------|-----------|--------|-----------------------------------|
+| `ROUTE_TLS_COLLECTOR_CRT` | `stage`           | Variable | Yes       | No     | Collector Route TLS cert (base64) |
+| `ROUTE_TLS_COLLECTOR_CRT` | `production`      | Variable | Yes       | No     | Collector Route TLS cert (base64) |
+| `ROUTE_TLS_COLLECTOR_KEY` | `stage`           | Variable | Yes       | Yes    | Collector Route TLS key (base64)  |
+| `ROUTE_TLS_COLLECTOR_KEY` | `production`      | Variable | Yes       | Yes    | Collector Route TLS key (base64)  |
+| `ROUTE_TLS_GRAFANA_CRT`   | `stage`           | Variable | Yes       | No     | Grafana Route TLS cert (base64)   |
+| `ROUTE_TLS_GRAFANA_CRT`   | `production`      | Variable | Yes       | No     | Grafana Route TLS cert (base64)   |
+| `ROUTE_TLS_GRAFANA_KEY`   | `stage`           | Variable | Yes       | Yes    | Grafana Route TLS key (base64)    |
+| `ROUTE_TLS_GRAFANA_KEY`   | `production`      | Variable | Yes       | Yes    | Grafana Route TLS key (base64)    |
+| `ROUTE_TLS_CA_CHAIN`      | `stage`           | Variable | Yes       | No     | CA chain for Route TLS (base64)   |
+| `ROUTE_TLS_CA_CHAIN`      | `production`      | Variable | Yes       | No     | CA chain for Route TLS (base64)   |
 
 **Encoding Route TLS certificates:**
 
@@ -171,8 +202,6 @@ base64 -w0 < collector.crt
 echo "<pasted-value>" | base64 -d | head -1
 # Expected: -----BEGIN CERTIFICATE-----
 ```
-
-All 5 `ROUTE_TLS_*` variables must be set together. If `ROUTE_TLS_COLLECTOR_CRT` is set, the deploy script expects all 5 to be present. If none are set, Routes fall back to default OpenShift ingress certificates.
 
 **Creating the deployer token:**
 
@@ -288,11 +317,11 @@ crc delete && crc setup && crc start
 
 Each environment has an overlay directory (`overlays/<env>/`) that customizes the base manifests. The base contains the full production configuration; overlays patch what differs.
 
-| Overlay      | Namespace          | Auth                        | Debug    | Secrets                       |
-|--------------|--------------------|-----------------------------|----------|-------------------------------|
-| `local`      | `complytime-dev`   | Disabled (anonymous/no JWT) | Enabled  | Auto-created by deploy script |
-| `stage`      | `complytime-stage` | OIDC + JWT                  | Enabled  | SealedSecrets                 |
-| `production` | `complytime-prod`  | OIDC + JWT                  | Disabled | SealedSecrets                 |
+| Overlay      | Namespace          | Auth                        | Debug    | Secrets                         |
+|--------------|--------------------|-----------------------------|----------|---------------------------------|
+| `local`      | `complytime-dev`   | Disabled (anonymous/no JWT) | Enabled  | Auto-created by deploy script   |
+| `stage`      | `complytime-stage` | OIDC + JWT                  | Enabled  | GitLab CI vars or SealedSecrets |
+| `production` | `complytime-prod`  | OIDC + JWT                  | Disabled | GitLab CI vars or SealedSecrets |
 
 ### Deploying
 
@@ -334,9 +363,7 @@ This generates a thin Kustomize overlay at `overlays/custom-<NAMESPACE>/` that i
 - `NAMESPACE` and profile selection (`-- stage`) are mutually exclusive
 - `sk:dev` does not support `NAMESPACE` — use `sk:run` for custom namespace deploys
 
-For stage/production, you must first:
-1. Configure secrets — either set GitLab CI variables (see [GitLab CI Secret Management](#gitlab-ci-secret-management)) or install the SealedSecrets controller and create SealedSecrets in `overlays/<env>/sealed-secrets/`
-2. Set `OIDC_ISSUER_URL` — as a GitLab CI variable (recommended) or directly in `overlays/<env>/patches/collector-env.yaml`. The post-deploy script injects the CI variable into the collector Deployment automatically.
+For stage/production, configure the required CI variables first — see [GitLab CI Secret Management](#gitlab-ci-secret-management).
 
 ### Switching Environments
 
@@ -365,9 +392,6 @@ Run ComplyTime locally using rootless Podman with systemctl --user. No OpenShift
 ```bash
 # Setup (generates self-signed TLS certs, installs quadlet units)
 task quadlet:setup
-
-# Use a local collector image instead of the default (quay.io/complytime/beacon-collector:latest)
-COLLECTOR_IMAGE=localhost/complybeacon/collector:latest task quadlet:setup
 
 # Or without TLS for debugging
 task quadlet:setup -- --no-tls
@@ -439,14 +463,14 @@ See [Quadlet README](quadlet/README.md) for detailed setup and troubleshooting.
 
 #### Authentication
 
-| Ansible Variable             | Ansible Default  | Kustomize Location                                                 | Notes                                                                |
-|------------------------------|------------------|--------------------------------------------------------------------|----------------------------------------------------------------------|
-| `grafana_oidc_enabled`       | `true`           | `overlays/<env>/patches/grafana-env.yaml`                          | Base has no OIDC; stage/production overlays add OIDC env vars        |
-| `grafana_oidc_client_id`     | Required         | `GRAFANA_OIDC_CLIENT_ID` CI variable → `post-deploy.sh` injection  | Sets `GF_AUTH_GENERIC_OAUTH_CLIENT_ID` on Grafana deployment         |
-| `GRAFANA_OIDC_CLIENT_SECRET` | K8s secret       | SealedSecret `grafana-oidc-secret`                                 | See `overlays/<env>/sealed-secrets/README.md`                        |
-| `oidc_issuer_url`            | Required per env | `OIDC_ISSUER_URL` env var on Collector, plus Grafana OIDC env vars | Set in overlay deployment patches                                    |
-| `grafana_admin_password`     | `admin`          | `GRAFANA_ADMIN_PASSWORD` CI variable → `post-deploy.sh` injection  | Sets `GF_SECURITY_ADMIN_PASSWORD` on Grafana deployment              |
-| `grafana_anonymous_enabled`  | `false`          | `base/grafana/deployment.yaml`                                     | Base: `false`. Local overlay enables via `patches/grafana-auth.yaml` |
+| Ansible Variable             | Ansible Default  | Kustomize Location                                                     | Notes                                                                        |
+|------------------------------|------------------|------------------------------------------------------------------------|------------------------------------------------------------------------------|
+| `grafana_oidc_enabled`       | `true`           | Auto-set via `grafana-env` ConfigMap (`GF_AUTH_GENERIC_OAUTH_ENABLED`) | `true` when `GF_AUTH_GENERIC_OAUTH_CLIENT_ID` is set, `false` otherwise      |
+| `grafana_oidc_client_id`     | Required         | `GF_AUTH_GENERIC_OAUTH_CLIENT_ID` CI variable → ConfigMap injection    | Sets `GF_AUTH_GENERIC_OAUTH_CLIENT_ID` on Grafana deployment                 |
+| `grafana_oidc_client_secret` | K8s secret       | `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` CI variable → Secret             | See `overlays/<env>/sealed-secrets/README.md`                                |
+| `oidc_issuer_url`            | Required per env | `OIDC_ISSUER_URL` env var on Collector, plus Grafana OIDC env vars     | Set in overlay deployment patches                                            |
+| `grafana_admin_password`     | Required         | `GF_SECURITY_ADMIN_PASSWORD` CI variable → Secret injection            | Sets `GF_SECURITY_ADMIN_PASSWORD` on Grafana deployment (hard fail if unset) |
+| `grafana_anonymous_enabled`  | `false`          | `base/grafana/deployment.yaml`                                         | Base: `false`. Local overlay enables via `patches/grafana-auth.yaml`         |
 
 #### Logging
 

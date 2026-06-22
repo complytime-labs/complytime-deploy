@@ -1,7 +1,7 @@
 {
   "realm": "complytime",
   "enabled": true,
-  "sslRequired": "none",
+  "sslRequired": "external",
   "accessTokenLifespan": 60,
   "clients": [
     {
@@ -80,8 +80,15 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "clientAuthenticatorType": "client-secret",
-      "redirectUris": ["*"],
-      "webOrigins": ["*"]
+      "redirectUris": [
+        "https://grafana.apps-crc.testing/login/generic_oauth",
+        "https://localhost:3000/login/generic_oauth",
+        "http://localhost:3000/login/generic_oauth"
+      ],
+      "webOrigins": [
+        "https://grafana.apps-crc.testing",
+        "https://localhost:3000"
+      ]
     }
   ],
   "users": [

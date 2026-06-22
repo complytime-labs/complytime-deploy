@@ -18,8 +18,6 @@ skip-check:
   - CKV_K8S_21
   # Project policy: image digest pinning is not used; tags managed per-overlay
   - CKV_K8S_43
-  # NetworkPolicy is managed per-overlay, not in base
-  - CKV2_K8S_6
   # Image tags are set per-environment via overlay patches, not fixed in base
   - CKV_K8S_14
   # OTel collector and Grafana require secrets as env vars for configuration
