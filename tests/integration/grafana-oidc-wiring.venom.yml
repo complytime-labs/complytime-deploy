@@ -1,0 +1,377 @@
+name: Grafana OIDC wiring verification
+vars:
+  grafana_host: "localhost"
+  grafana_port: "3000"
+  keycloak_host: "localhost"
+  keycloak_port: "8180"
+  grafana_oidc_client_id: "grafana-test"
+  ca_cert: ".test-output/service-ca.crt"
+  # Test fixture credentials for local Keycloak dev instance.
+  # Declared as vars so venom's secrets: redaction applies to logs and dumps.
+  _secret_grafana: "grafana-test-secret" # checkov:skip=CKV_SECRET_6:test fixture for local Keycloak dev instance, not a real secret
+  _password_testuser: "testpass"
+  _password_grafana_admin: "admin"
+secrets:
+  - _secret_grafana
+  - _password_testuser
+  - _password_grafana_admin
+
+testcases:
+  # -- Positive: Keycloak OIDC discovery is accessible ---------------------
+
+  - name: Keycloak OIDC discovery endpoint returns valid config
+    steps:
+      - type: exec
+        script: |
+          RESPONSE=$(curl -sf \
+            "http://{{.keycloak_host}}:{{.keycloak_port}}/realms/complytime/.well-known/openid-configuration" \
+            2>/dev/null) || { echo "CURL_FAILED"; exit 1; }
+          ISSUER=$(echo "$RESPONSE" | jq -r '.issuer // empty')
+          AUTH_EP=$(echo "$RESPONSE" | jq -r '.authorization_endpoint // empty')
+          TOKEN_EP=$(echo "$RESPONSE" | jq -r '.token_endpoint // empty')
+          echo "ISSUER=${ISSUER}"
+          echo "AUTH_EP=${AUTH_EP}"
+          echo "TOKEN_EP=${TOKEN_EP}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "ISSUER=http"
+          - result.systemout ShouldContainSubstring "/realms/complytime"
+          - result.systemout ShouldContainSubstring "AUTH_EP=http"
+          - result.systemout ShouldContainSubstring "TOKEN_EP=http"
+
+  # -- Positive: Grafana has Generic OAuth enabled (login page check) ------
+
+  - name: Grafana login page offers Generic OAuth sign-in
+    steps:
+      - type: exec
+        script: |
+          # Grafana renders an OAuth button on the login page when enabled.
+          # The button text contains the provider name ("Sign in with <name>").
+          HTTP_CODE=$(curl -s -k -o /dev/null -w '%{http_code}' \
+            "https://{{.grafana_host}}:{{.grafana_port}}/login" \
+            2>/dev/null) || HTTP_CODE="000"
+          # Also verify the OAuth login route is active (responds, not 404)
+          OAUTH_CODE=$(curl -s -k -o /dev/null -w '%{http_code}' --max-redirs 0 \
+            "https://{{.grafana_host}}:{{.grafana_port}}/login/generic_oauth" \
+            2>/dev/null) || OAUTH_CODE="000"
+          echo "LOGIN_STATUS=${HTTP_CODE}"
+          echo "OAUTH_ROUTE_STATUS=${OAUTH_CODE}"
+        assertions:
+          - result.code ShouldEqual 0
+          # Login page should be accessible
+          - result.systemout ShouldContainSubstring "LOGIN_STATUS=200"
+          # OAuth route should redirect to Keycloak (302), not return 404
+          - result.systemout ShouldNotContainSubstring "OAUTH_ROUTE_STATUS=404"
+
+  # -- Negative: bogus client ID is rejected by Keycloak -------------------
+
+  - name: Keycloak rejects authorization request with unknown client ID
+    steps:
+      - type: exec
+        script: |
+          # Request authorization with a client_id that does not exist in Keycloak
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            "http://{{.keycloak_host}}:{{.keycloak_port}}/realms/complytime/protocol/openid-connect/auth?client_id=grafana-nonexistent&response_type=code&redirect_uri=http://localhost:3000/login/generic_oauth&scope=openid" \
+            2>/dev/null) || HTTP_CODE="000"
+          echo "HTTP_STATUS=${HTTP_CODE}"
+        assertions:
+          - result.code ShouldEqual 0
+          # Keycloak returns an error page (not a redirect) for unknown clients.
+          # Depending on version this is 400 or a 200 error page; it must NOT be 302.
+          - result.systemout ShouldNotContainSubstring "HTTP_STATUS=302"
+
+  # -- Negative: valid client ID gets redirect (proves Keycloak knows it) --
+
+  - name: Keycloak redirects for valid grafana-test client ID
+    steps:
+      - type: exec
+        script: |
+          # Request authorization with the real client_id — expect 302 redirect to login
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            --max-redirs 0 \
+            "http://{{.keycloak_host}}:{{.keycloak_port}}/realms/complytime/protocol/openid-connect/auth?client_id={{.grafana_oidc_client_id}}&response_type=code&redirect_uri=http://localhost:3000/login/generic_oauth&scope=openid" \
+            2>/dev/null) || HTTP_CODE="000"
+          echo "HTTP_STATUS=${HTTP_CODE}"
+        assertions:
+          - result.code ShouldEqual 0
+          # Keycloak shows login page (200) or redirects to login form (302/303)
+          - result.systemout ShouldMatchRegex "HTTP_STATUS=(200|302|303)"
+
+  # -- Positive: Grafana OAuth login redirects to Keycloak -----------------
+
+  - name: Grafana OAuth login endpoint redirects to Keycloak auth URL
+    steps:
+      - type: exec
+        script: |
+          # Hit Grafana's OAuth login — it should 302 redirect to Keycloak
+          HEADERS=$(mktemp)
+          HTTP_CODE=$(curl -s -k -o /dev/null -w '%{http_code}' -D "$HEADERS" \
+            --max-redirs 0 \
+            "https://{{.grafana_host}}:{{.grafana_port}}/login/generic_oauth" \
+            2>/dev/null) || HTTP_CODE="000"
+          LOCATION=$(grep -i '^location:' "$HEADERS" | tr -d '\r')
+          rm -f "$HEADERS"
+          echo "HTTP_STATUS=${HTTP_CODE}"
+          echo "REDIRECT=${LOCATION}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "HTTP_STATUS=302"
+          - result.systemout ShouldMatchRegex "REDIRECT=.*realms/complytime"
+
+  # -- Negative: Grafana OAuth login with bogus state/code fails -----------
+
+  - name: Grafana OAuth callback with bogus code returns error
+    steps:
+      - type: exec
+        script: |
+          # Hit Grafana's OAuth callback with a fake authorization code
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -k --max-redirs 0 \
+            "https://{{.grafana_host}}:{{.grafana_port}}/login/generic_oauth?code=bogus-auth-code&state=bogus-state" \
+            2>/dev/null) || HTTP_CODE="000"
+          echo "HTTP_STATUS=${HTTP_CODE}"
+        assertions:
+          - result.code ShouldEqual 0
+          # Grafana should reject the bogus code — expect a redirect to login
+          # page with error, or a 500/302 (not 200)
+          - result.systemout ShouldNotContainSubstring "HTTP_STATUS=200"
+
+  # -- Positive: ROPC — Keycloak issues valid user token --------------------
+
+  - name: ROPC grant returns valid user token with expected claims
+    steps:
+      - type: get-user-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "{{.grafana_oidc_client_id}}"
+        client_secret: "{{._secret_grafana}}" # checkov:skip=CKV_SECRET_6:test fixture credential from venom vars, not a real secret
+        username: "testuser"
+        password: "{{._password_testuser}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+          - result.token_email ShouldEqual "testuser@example.com"
+          - result.token_username ShouldEqual "testuser"
+
+  # -- Negative: ROPC — wrong password is rejected --------------------------
+
+  - name: ROPC grant with wrong password is rejected
+    steps:
+      - type: exec
+        script: |
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -X POST \
+            "http://{{.keycloak_host}}:{{.keycloak_port}}/realms/complytime/protocol/openid-connect/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "grant_type=password&client_id={{.grafana_oidc_client_id}}&client_secret={{._secret_grafana}}&username=testuser&password=wrongpass&scope=openid" \
+            2>/dev/null) || HTTP_CODE="000" # checkov:skip=CKV_SECRET_6:test fixture credential from venom vars, not a real secret
+          echo "HTTP_STATUS=${HTTP_CODE}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "HTTP_STATUS=401"
+
+  # -- Positive: Headless authorization_code flow succeeds -------------------
+
+  - name: Authorization code flow completes and returns valid user token
+    steps:
+      - type: do-authorization-code-login
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "{{.grafana_oidc_client_id}}"
+        client_secret: "{{._secret_grafana}}"
+        redirect_uri: "https://localhost:3000/login/generic_oauth"
+        username: "testuser"
+        password: "{{._password_testuser}}"
+        assertions:
+          - result.result ShouldEqual "OK"
+          - result.access_token ShouldNotBeEmpty
+          - result.token_email ShouldEqual "testuser@example.com"
+          - result.token_username ShouldEqual "testuser"
+
+  # -- Negative: Authorization code flow with wrong password fails -----------
+
+  - name: Authorization code flow with wrong password fails at login
+    steps:
+      - type: do-authorization-code-login
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "{{.grafana_oidc_client_id}}"
+        client_secret: "{{._secret_grafana}}"
+        redirect_uri: "https://localhost:3000/login/generic_oauth"
+        username: "testuser"
+        password: "wrongpass"
+        assertions:
+          - result.result ShouldEqual "FAIL"
+
+  # -- Positive: Full end-to-end Grafana OIDC login -------------------------
+  #
+  # LLM MAINTENANCE PROMPT — if this test fails, use the following:
+  #
+  #   This test simulates a browser-based OAuth2 authorization_code login
+  #   against Keycloak, then uses the Grafana session cookie to call a
+  #   protected API. It is intentionally fragile — it parses HTML and
+  #   follows redirects across two services. The STAGE= output tells you
+  #   exactly where it broke.
+  #
+  #   STAGE=keycloak_page  → Grafana did not redirect to Keycloak.
+  #     Check: Is Keycloak running on {{keycloak_host}}:{{keycloak_port}}?
+  #     Check: Are GF_AUTH_GENERIC_OAUTH_* env vars set on the Grafana
+  #            deployment? (See _swap-grafana-oidc in integration.yml)
+  #     Debug: curl -sk -L -v https://localhost:3000/login/generic_oauth
+  #
+  #   STAGE=form_parse  → Keycloak's login page HTML changed.
+  #     Check: The grep pattern 'action="[^"]*"' may not match the new
+  #            Keycloak version's login form. Fetch the page manually:
+  #              curl -sL "http://localhost:8180/realms/complytime/protocol/openid-connect/auth?client_id=grafana-test&response_type=code&scope=openid&redirect_uri=https://localhost:3000/login/generic_oauth"
+  #            Search the HTML for the <form> tag and update the grep/sed
+  #            pattern on the FORM_ACTION= line to match.
+  #
+  #   STAGE=session  → Keycloak authenticated but Grafana did not set a
+  #     session cookie. This usually means the redirect_uri did not match
+  #     or Grafana rejected the authorization code.
+  #     Check: Does the grafana-test client in complytime-realm.json have
+  #            a redirectUris entry that matches the Grafana callback URL?
+  #     Check: Is the client_secret correct? (grafana-test-secret)
+  #     Debug: Run the login POST with -v to see redirect chain:
+  #              curl -sk -c cookies -b cookies -L -v -d "username=testuser" -d "password=testpass" "$FORM_ACTION"
+  #
+  #   STAGE=api_call  → Session cookie exists but /api/org failed.
+  #     Check: Is Grafana healthy? curl -sk https://localhost:3000/api/health
+  #     Check: Does the session cookie grant access? Try:
+  #              curl -sk -b cookies https://localhost:3000/api/org
+  #
+  #   Key files:
+  #     - overlays/local/keycloak/complytime-realm.json (grafana-test client + testuser)
+  #     - .taskfiles/integration.yml (_swap-grafana-oidc sets OIDC env vars)
+  #     - overlays/stage/patches/grafana-env.yaml (reference OIDC config)
+
+  - name: Full Grafana OIDC login returns authenticated session
+    steps:
+      - type: exec
+        script: |
+          # Use separate cookie jars for Grafana and Keycloak to prevent
+          # intermediate Keycloak requests from overwriting the oauth_state
+          # cookie set by Grafana during step 1.
+          GF_COOKIES=$(mktemp)
+          KC_COOKIES=$(mktemp)
+          trap "rm -f $GF_COOKIES $KC_COOKIES" EXIT
+          KC_EXTERNAL="http://{{.keycloak_host}}:{{.keycloak_port}}"
+          GF_BASE="https://{{.grafana_host}}:{{.grafana_port}}"
+
+          # Step 0: Clean up any stale OAuth user from a previous test run.
+          # Grafana's PVC persists across pod restarts. Each fresh Keycloak
+          # assigns a new UUID (sub claim) to testuser. If a previous run
+          # created a Grafana user linked to the OLD UUID, the new login
+          # fails with "unable to create user: user not found" (actually a
+          # conflict on email with a different external auth ID).
+          # Use Grafana's default admin credentials (admin/admin) via basic
+          # auth to find and delete the stale user before attempting OAuth.
+          GF_AUTH="Authorization: Basic $(printf '%s' "admin:{{._password_grafana_admin}}" | base64)"
+          USERS=$(curl -s -k -H "$GF_AUTH" "${GF_BASE}/api/org/users" 2>/dev/null)
+          if [ -n "$USERS" ] && echo "$USERS" | jq -e '.' >/dev/null 2>&1; then
+            TESTUSER_ID=$(echo "$USERS" | jq -r '.[] | select(.email=="testuser@example.com" or .login=="testuser") | .userId' 2>/dev/null)
+            if [ -n "$TESTUSER_ID" ] && [ "$TESTUSER_ID" != "null" ]; then
+              curl -s -k -H "$GF_AUTH" -X DELETE "${GF_BASE}/api/admin/users/${TESTUSER_ID}" 2>/dev/null || true
+            fi
+          fi
+
+          # Step 1: Hit Grafana's OAuth login — capture redirect, don't follow
+          # Grafana redirects to an internal Keycloak URL (e.g. http://keycloak:8080/...)
+          # that isn't reachable from the test host. Capture it and rewrite.
+          HEADERS=$(mktemp)
+          trap "rm -f $GF_COOKIES $KC_COOKIES $HEADERS" EXIT
+          curl -s -k -c "$GF_COOKIES" -D "$HEADERS" \
+            --max-redirs 0 -o /dev/null \
+            "${GF_BASE}/login/generic_oauth" \
+            2>/dev/null || true
+          REDIRECT=$(grep -i '^location:' "$HEADERS" | tr -d '\r' | sed 's/^[Ll]ocation: *//')
+          rm -f "$HEADERS"
+          if [ -z "$REDIRECT" ]; then
+            echo "RESULT=FAIL"
+            echo "STAGE=keycloak_page"
+            echo "ERROR=Grafana did not redirect to Keycloak"
+            exit 0
+          fi
+          # Rewrite internal Keycloak hostname to port-forwarded address
+          REDIRECT=$(echo "$REDIRECT" | sed -E "s|https?://[^/]+|${KC_EXTERNAL}|")
+
+          # Step 1b: Fetch the Keycloak login page (Keycloak cookie jar only)
+          LOGIN_PAGE=$(curl -s -c "$KC_COOKIES" -b "$KC_COOKIES" -L "$REDIRECT" 2>/dev/null)
+          if [ -z "$LOGIN_PAGE" ]; then
+            echo "RESULT=FAIL"
+            echo "STAGE=keycloak_page"
+            echo "ERROR=Could not reach Keycloak login page via rewritten redirect"
+            exit 0
+          fi
+
+          # Step 2: Parse the Keycloak login form action URL
+          FORM_ACTION=$(echo "$LOGIN_PAGE" | grep -oP 'action="[^"]*"' | head -1 | sed 's/action="//;s/"$//' | sed 's/&amp;/\&/g')
+          if [ -z "$FORM_ACTION" ]; then
+            echo "RESULT=FAIL"
+            echo "STAGE=form_parse"
+            echo "ERROR=Could not parse Keycloak login form"
+            exit 0
+          fi
+          # Rewrite internal hostname in form action URL
+          FORM_ACTION=$(echo "$FORM_ACTION" | sed -E "s|https?://[^/]+|${KC_EXTERNAL}|")
+
+          # Step 3: POST credentials to Keycloak — don't follow redirects
+          # Capture the redirect back to Grafana and follow it manually
+          HEADERS2=$(mktemp)
+          trap "rm -f $GF_COOKIES $KC_COOKIES $HEADERS2" EXIT
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -c "$KC_COOKIES" -b "$KC_COOKIES" \
+            -D "$HEADERS2" \
+            --max-redirs 0 \
+            -d "username=testuser" \
+            -d "password={{._password_testuser}}" \
+            "$FORM_ACTION" 2>/dev/null) || HTTP_CODE="000"
+          CALLBACK_URL=$(grep -i '^location:' "$HEADERS2" | tr -d '\r' | sed 's/^[Ll]ocation: *//')
+          rm -f "$HEADERS2"
+
+          if [ "$HTTP_CODE" != "302" ] || [ -z "$CALLBACK_URL" ]; then
+            echo "RESULT=FAIL"
+            echo "STAGE=login_post"
+            echo "ERROR=Login POST did not redirect (HTTP ${HTTP_CODE})"
+            exit 0
+          fi
+
+          # Step 3b: Follow the callback URL back to Grafana
+          # Merge Keycloak cookies into Grafana jar so both oauth_state
+          # (from Grafana step 1) and KEYCLOAK_SESSION are available.
+          grep -v '^#' "$KC_COOKIES" | grep -v '^$' >> "$GF_COOKIES" 2>/dev/null || true
+          # Grafana exchanges the code for tokens and sets a session cookie
+          GRAFANA_RESPONSE=$(curl -s -k -c "$GF_COOKIES" -b "$GF_COOKIES" -L \
+            -w '\n%{http_code}' \
+            "$CALLBACK_URL" 2>/dev/null) || GRAFANA_RESPONSE=$'\n000'
+          FINAL_CODE=$(echo "$GRAFANA_RESPONSE" | tail -1)
+
+          # Check we got a Grafana session cookie
+          SESSION=$(grep -i 'grafana_session' "$GF_COOKIES" | awk '{print $NF}')
+          if [ -z "$SESSION" ]; then
+            echo "RESULT=FAIL"
+            echo "STAGE=session"
+            echo "ERROR=No grafana_session cookie after login (HTTP ${FINAL_CODE})"
+            exit 0
+          fi
+
+          # Step 4: Use the session cookie to call a protected Grafana API endpoint
+          API_RESPONSE=$(curl -s -k -b "$GF_COOKIES" \
+            "${GF_BASE}/api/org" \
+            2>/dev/null)
+          ORG_NAME=$(echo "$API_RESPONSE" | jq -r '.name // empty')
+
+          if [ -z "$ORG_NAME" ]; then
+            echo "RESULT=FAIL"
+            echo "STAGE=api_call"
+            echo "ERROR=Could not get org name from /api/org"
+            exit 0
+          fi
+
+          echo "RESULT=OK"
+          echo "STAGE=complete"
+          echo "ORG_NAME=${ORG_NAME}"
+          echo "SESSION_PRESENT=true"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "RESULT=OK"
+          - result.systemout ShouldContainSubstring "SESSION_PRESENT=true"
+          - result.systemout ShouldContainSubstring "ORG_NAME="

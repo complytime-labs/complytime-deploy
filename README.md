@@ -117,6 +117,10 @@ The GitLab CI pipeline uses **environment-scoped variables** to inject different
 | `OIDC_ISSUER_URL`            | `production`      | Variable | Yes       | No     | OIDC issuer URL for production     |
 | `GRAFANA_OIDC_CLIENT_SECRET` | `stage`           | Variable | Yes       | Yes    | Grafana OIDC client secret (stage) |
 | `GRAFANA_OIDC_CLIENT_SECRET` | `production`      | Variable | Yes       | Yes    | Grafana OIDC client secret (prod)  |
+| `GRAFANA_OIDC_CLIENT_ID`     | `stage`           | Variable | Yes       | No     | Grafana OIDC client ID (stage)     |
+| `GRAFANA_OIDC_CLIENT_ID`     | `production`      | Variable | Yes       | No     | Grafana OIDC client ID (prod)      |
+| `GRAFANA_ADMIN_PASSWORD`     | `stage`           | Variable | Yes       | Yes    | Grafana admin password (stage)     |
+| `GRAFANA_ADMIN_PASSWORD`     | `production`      | Variable | Yes       | Yes    | Grafana admin password (prod)      |
 | `QUAY_DOCKER_CONFIG_JSON`    | `stage`           | Variable | Yes       | Yes    | Quay pull secret JSON (stage)      |
 | `QUAY_DOCKER_CONFIG_JSON`    | `production`      | Variable | Yes       | Yes    | Quay pull secret JSON (prod)       |
 | `ROUTE_TLS_COLLECTOR_CRT`    | `stage`           | Variable | Yes       | No     | Collector Route TLS cert (base64)  |
@@ -413,9 +417,10 @@ See [Quadlet README](quadlet/README.md) for detailed setup and troubleshooting.
 | Ansible Variable             | Ansible Default  | Kustomize Location                                                 | Notes                                                                |
 |------------------------------|------------------|--------------------------------------------------------------------|----------------------------------------------------------------------|
 | `grafana_oidc_enabled`       | `true`           | `overlays/<env>/patches/grafana-env.yaml`                          | Base has no OIDC; stage/production overlays add OIDC env vars        |
-| `grafana_oidc_client_id`     | Required         | Overlay patch env var                                              | Stage/production overlays set `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`      |
+| `grafana_oidc_client_id`     | Required         | `GRAFANA_OIDC_CLIENT_ID` CI variable → `post-deploy.sh` injection  | Sets `GF_AUTH_GENERIC_OAUTH_CLIENT_ID` on Grafana deployment         |
 | `GRAFANA_OIDC_CLIENT_SECRET` | K8s secret       | SealedSecret `grafana-oidc-secret`                                 | See `overlays/<env>/sealed-secrets/README.md`                        |
 | `oidc_issuer_url`            | Required per env | `OIDC_ISSUER_URL` env var on Collector, plus Grafana OIDC env vars | Set in overlay deployment patches                                    |
+| `grafana_admin_password`     | `admin`          | `GRAFANA_ADMIN_PASSWORD` CI variable → `post-deploy.sh` injection  | Sets `GF_SECURITY_ADMIN_PASSWORD` on Grafana deployment              |
 | `grafana_anonymous_enabled`  | `false`          | `base/grafana/deployment.yaml`                                     | Base: `false`. Local overlay enables via `patches/grafana-auth.yaml` |
 
 #### Logging
@@ -501,6 +506,8 @@ task quadlet:teardown         # Full cleanup
 task integration:test                    # Run all tests (CRC mode)
 task integration:test MODE=quadlet       # Run all tests (Quadlet mode)
 task integration:test NAMESPACE=foo      # Run tests in custom namespace (CRC only)
+task integration:test TEST_DEBUG=1       # Run with diagnostic output enabled
+task integration:test-grafana-oidc       # Run only the Grafana OIDC wiring tests (CRC only)
 task integration:setup                   # Install tools + deploy + port-forward
 task integration:clean                   # Remove test artifacts
 ```
@@ -655,7 +662,3 @@ two deployment paths maintain separate configuration. This is acceptable because
 quadlet surface is small (4 containers, 3 volumes, 1 network) and the configs it references
 (OTel collector, Loki, Grafana datasources) are sourced from the same base files at setup
 time.
-
-## License
-
-Proprietary - Red Hat Internal Use Only
