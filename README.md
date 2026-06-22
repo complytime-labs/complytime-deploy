@@ -21,28 +21,51 @@ The system consists of:
 
 ## Architecture
 
-```
-  External Clients              Browser
-       |                           |
-       | webhook/OTLP              | HTTPS
-       v                           v
-  +----------+
-  |Collector |
-  | (Route)  |
-  +----+-----+
-       |
-       | OTLP/HTTPS
-       v
-  +----------+
-  |   Loki   |<--- Grafana (Route)
-  |(internal)|     queries logs
-  +----------+
-       |
-       v
-  +----------+
-  |    S3    |  Production: AWS S3
-  | evidence |  Local: RustFS (Apache 2.0)
-  +----------+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {
+  'primaryColor': '#2f6dab',
+  'primaryTextColor': '#1e1e1e',
+  'primaryBorderColor': '#7c8ba1',
+  'lineColor': '#7c8ba1',
+  'edgeLabelBackground': '#eef2f8',
+  'tertiaryColor': 'transparent',
+  'tertiaryTextColor': '#7c8ba1',
+  'tertiaryBorderColor': '#7c8ba1',
+  'clusterBkg': 'transparent',
+  'clusterBorder': '#7c8ba1',
+  'titleColor': '#7c8ba1',
+  'noteBkgColor': '#eef2f8',
+  'noteTextColor': '#1e1e1e',
+  'fontFamily': 'system-ui, sans-serif'
+}, 'themeCSS': '.node .nodeLabel{color:#ffffff!important;fill:#ffffff!important;}'}}%%
+flowchart TD
+  clients["External Clients"]
+  browser["Browser"]
+  collector["Collector"]
+  loki["Loki"]
+  grafana["Grafana"]
+
+  clients -->|webhook / OTLP| collector
+  browser -->|HTTPS| grafana
+  collector -->|OTLP / HTTPS| loki
+  grafana -->|queries logs| loki
+
+  subgraph evidence["Evidence storage (one per environment)"]
+    s3prod["AWS S3 (stage/production)"]
+    s3local["RustFS (local)"]
+  end
+
+  collector -->|S3 API| evidence
+
+  classDef sysA fill:#2f6dab,color:#ffffff,stroke:#7c8ba1
+  classDef sysB fill:#1d7848,color:#ffffff,stroke:#7c8ba1
+  classDef sysC fill:#7457b8,color:#ffffff,stroke:#7c8ba1
+  classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
+  class clients,browser sysD
+  class collector sysA
+  class loki sysB
+  class grafana sysC
+  class s3prod,s3local sysD
 ```
 
 **Data flow:** External clients send compliance data to Collector via webhook (OIDC-authenticated) or OTLP. Collector transforms them to OCSF format, generates metrics, and exports to Loki (for querying) and S3 (for evidence storage). Grafana queries Loki for dashboard visualization.
@@ -115,6 +138,8 @@ The GitLab CI pipeline uses **environment-scoped variables** to inject different
 | `AWS_SECRET_ACCESS_KEY`      | `production`      | Variable | Yes       | Yes    | AWS secret for prod S3 bucket      |
 | `OIDC_ISSUER_URL`            | `stage`           | Variable | Yes       | No     | OIDC issuer URL for stage          |
 | `OIDC_ISSUER_URL`            | `production`      | Variable | Yes       | No     | OIDC issuer URL for production     |
+| `S3_ENDPOINT`                | `stage`           | Variable | Yes       | No     | S3-compatible endpoint for stage   |
+| `S3_ENDPOINT`                | `production`      | Variable | Yes       | No     | S3-compatible endpoint for prod    |
 | `GRAFANA_OIDC_CLIENT_SECRET` | `stage`           | Variable | Yes       | Yes    | Grafana OIDC client secret (stage) |
 | `GRAFANA_OIDC_CLIENT_SECRET` | `production`      | Variable | Yes       | Yes    | Grafana OIDC client secret (prod)  |
 | `GRAFANA_OIDC_CLIENT_ID`     | `stage`           | Variable | Yes       | No     | Grafana OIDC client ID (stage)     |
@@ -662,3 +687,9 @@ two deployment paths maintain separate configuration. This is acceptable because
 quadlet surface is small (4 containers, 3 volumes, 1 network) and the configs it references
 (OTel collector, Loki, Grafana datasources) are sourced from the same base files at setup
 time.
+
+## Where to Go Next
+
+- Podman Quadlet deployment (no OpenShift needed): [quadlet/README.md](quadlet/README.md)
+- SealedSecrets setup for stage: [overlays/stage/sealed-secrets/README.md](overlays/stage/sealed-secrets/README.md)
+- SealedSecrets setup for production: [overlays/production/sealed-secrets/README.md](overlays/production/sealed-secrets/README.md)
