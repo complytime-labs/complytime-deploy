@@ -25,6 +25,7 @@ vars:
   NAMESPACE: '{{.NAMESPACE | default ""}}'
 
 env:
+  SKAFFOLD_COLLECT_METRICS: "false"
   DOCKER_HOST:
     sh: |
       if [ -n "${DOCKER_HOST:-}" ]; then
