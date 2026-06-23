@@ -2,9 +2,6 @@
 # Requires: https://taskfile.dev
 version: "3"
 
-dotenv:
-  - skaffold.env
-
 silent: true
 
 includes:
@@ -25,6 +22,9 @@ vars:
   TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'
   DEFAULT_NAMESPACE: '{{.DEFAULT_NAMESPACE | default "complytime-dev"}}'
   NAMESPACE: '{{.NAMESPACE | default ""}}'
+
+dotenv:
+  - skaffold.env
 
 env:
   SKAFFOLD_COLLECT_METRICS: "false"

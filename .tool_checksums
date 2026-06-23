@@ -4,9 +4,6 @@
 # task v3.51.1
 task/v3.51.1/linux/amd64/task_linux_amd64.tar.gz: da7e92f0ff961ef2aae7cfecbad8d1fd2a08d7b09ba968673adf7ff389b243b5
 
-# oc v4.22.0
-oc/v4.22.0/linux/amd64/openshift-client-linux-4.22.0.tar.gz: b6e027b304678d55e89ea1e8fe5c89e832f9c1a73518a1846e8cf9601c647aef
-
 # kustomize v5.8.1
 kustomize/v5.8.1/linux/amd64/kustomize_v5.8.1_linux_amd64.tar.gz: 029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d
 
