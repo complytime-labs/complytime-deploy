@@ -37,7 +37,7 @@ jobs:
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install deploy tools
-        run: task tools:install -- kustomize skaffold
+        run: task tools:install-deploy
 
       - name: Validate all profiles
         run: task sk:validate
