@@ -105,15 +105,32 @@ if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
 	# grafana-env (always created — OIDC is enabled only when client ID is set)
 	# These use Grafana's native GF_* env var names.
 	# See: https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/
+	#
+	# SSO client setup checklist (Keycloak / Red Hat SSO):
+	#   1. Create a client with Client ID matching GF_AUTH_GENERIC_OAUTH_CLIENT_ID
+	#   2. Set Access Type to "confidential"
+	#   3. Add valid redirect URIs:
+	#        - <GF_SERVER_ROOT_URL>/login/generic_oauth  (login callback)
+	#        - <GF_SERVER_ROOT_URL>/*                     (post-logout redirect)
+	#   4. Set client secret → store as GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET CI var
+	#   5. Set GF_SERVER_ROOT_URL to the exact public Grafana URL (with https://)
+	#      This must match the redirect_uri sent to the SSO provider.
+	#
+	# Common error: "Invalid parameter: redirect_uri"
+	#   → The redirect URI Grafana sends (<root_url>/login/generic_oauth)
+	#     is not in the SSO client's valid redirect URIs list.
 	if [[ -n "${GF_AUTH_GENERIC_OAUTH_CLIENT_ID:-}" ]]; then
 		GRAFANA_OAUTH_ENABLED="true"
 		GRAFANA_ENV_WARNINGS=""
 		for gf_var in GF_AUTH_GENERIC_OAUTH_AUTH_URL GF_AUTH_GENERIC_OAUTH_TOKEN_URL \
-			GF_AUTH_GENERIC_OAUTH_API_URL GF_AUTH_SIGNOUT_REDIRECT_URL GF_SERVER_ROOT_URL; do
+			GF_AUTH_GENERIC_OAUTH_API_URL GF_AUTH_SIGNOUT_REDIRECT_URL; do
 			if [[ -z "${!gf_var:-}" ]]; then
 				GRAFANA_ENV_WARNINGS="${GRAFANA_ENV_WARNINGS}  WARNING: $gf_var is not set — Grafana OIDC may not work correctly.\n"
 			fi
 		done
+		if [[ -z "${GF_SERVER_ROOT_URL:-}" ]]; then
+			GRAFANA_ENV_WARNINGS="${GRAFANA_ENV_WARNINGS}  INFO: GF_SERVER_ROOT_URL not set — will be auto-derived from Route hostname in post-deploy.\n"
+		fi
 		if [[ -n "$GRAFANA_ENV_WARNINGS" ]]; then
 			printf '%b' "$GRAFANA_ENV_WARNINGS"
 		fi
@@ -121,6 +138,10 @@ if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
 		GRAFANA_OAUTH_ENABLED="false"
 		echo "  GF_AUTH_GENERIC_OAUTH_CLIENT_ID not set — OIDC disabled"
 	fi
+	# GF_AUTH_SIGNOUT_REDIRECT_URL format for Keycloak/RHSSO:
+	#   https://<sso-host>/realms/<realm>/protocol/openid-connect/logout?redirect_uri=<url-encoded-grafana-root-url>
+	# The redirect_uri value must also be registered in the SSO client's
+	# valid redirect URIs (alongside the login callback).
 	apply_configmap grafana-env \
 		oc create configmap grafana-env \
 		--from-literal=GF_AUTH_GENERIC_OAUTH_ENABLED="$GRAFANA_OAUTH_ENABLED" \

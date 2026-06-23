@@ -10,6 +10,9 @@ OVERLAY="${1:?Usage: $0 <overlay> [namespace-override] (e.g., stage, production)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# shellcheck source=scripts/lib/grafana-url.sh
+source "$SCRIPT_DIR/lib/grafana-url.sh"
+
 TMPFILE=""
 trap 'rm -f "$TMPFILE"' EXIT
 
@@ -127,11 +130,16 @@ oc rollout status deployment/collector -n "$NAMESPACE" --timeout=5m
 oc rollout status deployment/loki -n "$NAMESPACE" --timeout=5m
 oc rollout status deployment/grafana -n "$NAMESPACE" --timeout=5m
 
+# --- Auto-derive Grafana URL from Route hostname ---
+# See scripts/lib/grafana-url.sh for implementation details.
+grafana_auto_derive_urls
+
 echo ""
 echo "Deployment successful!"
 echo ""
 COLLECTOR_HOST=$(oc get route collector-http -n "$NAMESPACE" -o jsonpath='{.spec.host}' 2>/dev/null || echo "<not set>")
-GRAFANA_HOST=$(oc get route grafana -n "$NAMESPACE" -o jsonpath='{.spec.host}' 2>/dev/null || echo "<not set>")
+GRAFANA_HOST=$(oc get route grafana -n "$NAMESPACE" -o jsonpath='{.spec.host}' 2>/dev/null || echo '<not set>')
 echo "Access your services:"
 echo "  Collector: https://$COLLECTOR_HOST"
 echo "  Grafana:   https://$GRAFANA_HOST"
+echo "  Admin:     https://$GRAFANA_HOST/login?disableAutoLogin=true"

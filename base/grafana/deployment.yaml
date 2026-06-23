@@ -62,6 +62,12 @@ spec:
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources/ds.yaml
               subPath: ds.yaml
+            - name: dashboards-provider
+              mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml
+              subPath: dashboards.yaml
+            - name: dashboards-json
+              mountPath: /etc/grafana/provisioning/dashboards/json/compliance-overview.json
+              subPath: compliance-overview.json
             - name: grafana-tls
               mountPath: /etc/tls
               readOnly: true
@@ -89,6 +95,12 @@ spec:
         - name: datasources
           configMap:
             name: grafana-datasources
+        - name: dashboards-provider
+          configMap:
+            name: grafana-dashboards
+        - name: dashboards-json
+          configMap:
+            name: grafana-dashboard-compliance
         - name: grafana-tls
           secret:
             secretName: grafana-tls

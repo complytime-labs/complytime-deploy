@@ -1,10 +1,17 @@
 # Production collector config — full auth (OIDC, JWT).
 # Hostnames injected via OTel ${env:VAR} substitution.
 #
+# Authentication:
+#   The webhookevent receiver requires a valid OIDC bearer token.
+#   Browsing to the collector route in a browser returns
+#   "Authentication didn't succeed" — this is expected behavior.
+#   Clients must obtain a token from the OIDC provider and send it
+#   as a Bearer token in the Authorization header.
+#
 # Pipelines:
 #   logs/analysis_pipeline — compliance evaluation ingest, transform, export to Loki + S3
 #   metrics — signaltometrics-derived compliance counters (debug exporter until
-#             beacon-collector ships with prometheusexporter; see FOO.md)
+#             beacon-collector ships with prometheusexporter)
 extensions:
   oidc:
     issuer_url: ${env:OIDC_ISSUER_URL}

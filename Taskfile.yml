@@ -16,6 +16,8 @@ includes:
     taskfile: .taskfiles/crc.yml
   quadlet:
     taskfile: .taskfiles/quadlet.yml
+  unit:
+    taskfile: .taskfiles/unit.yml
   integration:
     taskfile: .taskfiles/integration.yml
 
