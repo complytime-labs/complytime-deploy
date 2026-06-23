@@ -1,0 +1,174 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Compliance Status Overview",
+      "description": "Count of compliance evaluations by result status",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Passed" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Failed" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Not Run" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Needs Review" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Not Applicable" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Unknown" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+        "pieType": "pie",
+        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "" },
+          "expr": "sum by (policy_evaluation_result) (count_over_time({policy_evaluation_result=~\".+\"} [$__range]))",
+          "legendFormat": "{{policy_evaluation_result}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Evaluations by Control",
+      "description": "Count of compliance evaluations grouped by control (procedure) ID",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "loki", "uid": "" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" },
+        "xTickLabelRotation": -45,
+        "stacking": "none",
+        "barWidth": 0.8,
+        "groupWidth": 0.7
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "" },
+          "expr": "sum by (policy_rule_id) (count_over_time({policy_rule_id=~\".+\"} [$__range]))",
+          "legendFormat": "{{policy_rule_id}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Evaluation Timeline",
+      "description": "Compliance evaluation results over time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "loki", "uid": "" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": { "mode": "normal" }
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Passed" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Failed" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "" },
+          "expr": "sum by (policy_evaluation_result) (count_over_time({policy_evaluation_result=~\".+\"} [$__auto]))",
+          "legendFormat": "{{policy_evaluation_result}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Recent Evaluations",
+      "description": "Latest compliance evaluation log entries from Loki",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "loki", "uid": "" },
+      "fieldConfig": {
+        "defaults": { "mappings": [] },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "Time" }]
+      },
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels"
+          }
+        }
+      ],
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "" },
+          "expr": "{policy_rule_id=~\".+\"}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["compliance", "complytime"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Compliance Overview",
+  "uid": "complytime-compliance-overview",
+  "version": 1
+}

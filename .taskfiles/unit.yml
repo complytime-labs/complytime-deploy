@@ -1,0 +1,17 @@
+version: "3"
+
+vars:
+  TEST_DIR: '{{.ROOT_DIR}}/{{.TEST_DIR | default ".test-output"}}'
+  UNIT_DIR: "{{.ROOT_DIR}}/tests/unit"
+
+tasks:
+  default:
+    silent: true
+    cmd: |
+      task --list 2>/dev/null
+
+  test:
+    desc: "Run unit tests (bats)"
+    cmds:
+      - mkdir -p "{{.TEST_DIR}}"
+      - bats "{{.UNIT_DIR}}" --formatter tap 2>&1 | tee "{{.TEST_DIR}}/unit-tests.log"
