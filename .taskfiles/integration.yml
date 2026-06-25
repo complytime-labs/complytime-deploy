@@ -31,8 +31,12 @@ tasks:
   setup:
     desc: Install tools, deploy stack if needed, extract CA, start port-forwards, pull OCI bundle
     cmds:
+      - task: clean
       - task: check-prereqs
       - task: :tools:_install-complyctl
+      - task: :tools:_install-ampel-provider
+      - task: :tools:_install-snappy
+      - task: :tools:_install-ampel
       - task: :tools:_install-venom
       - task: _ensure-sealed-secrets
       - task: deploy-if-needed
@@ -40,6 +44,7 @@ tasks:
       - task: _ensure-bucket
       - task: extract-ca
       - task: port-forward
+      - task: _wait-keycloak
       - task: pull-bundle
 
   deploy-if-needed:
@@ -160,19 +165,12 @@ tasks:
         fi
 
   _wait-keycloak:
-    desc: Wait for Keycloak to become ready (realm import complete)
+    desc: Wait for Keycloak OIDC discovery via port-forward (requires port-forward running)
     internal: true
     cmds:
       - |
         echo "Waiting for Keycloak OIDC discovery..."
-        if [ "{{.MODE}}" = "quadlet" ]; then
-          KC_URL="http://localhost:{{.KEYCLOAK_PORT}}"
-        else
-          # Start port-forward for Keycloak
-          nohup oc port-forward svc/keycloak {{.KEYCLOAK_PORT}}:8080 -n "{{._NS}}" \
-            >> "{{.TEST_DIR}}/port-forward.log" 2>&1 &
-          KC_URL="http://localhost:{{.KEYCLOAK_PORT}}"
-        fi
+        KC_URL="http://localhost:{{.KEYCLOAK_PORT}}"
         for i in $(seq 1 60); do
           if curl -sf "${KC_URL}/realms/complytime/.well-known/openid-configuration" > /dev/null 2>&1; then
             echo "OK: Keycloak ready (attempt $i/60)"
@@ -188,6 +186,36 @@ tasks:
           oc logs deployment/keycloak -n "{{._NS}}" --tail=30 || true
         fi
         exit 1
+
+  _ensure-port-forwards:
+    desc: Verify all CRC port-forwards are alive, restart any dead ones
+    internal: true
+    cmds:
+      - |
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          exit 0
+        fi
+        mkdir -p "{{.TEST_DIR}}"
+        RESTARTED=0
+        for FWD in "svc/collector 8088:8088" "svc/collector 4318:4318" "svc/collector 4317:4317" \
+                   "svc/keycloak {{.KEYCLOAK_PORT}}:8080" \
+                   "svc/loki 3100:3100" "svc/rustfs 9000:9000" "svc/grafana 3000:3000"; do
+          SVC=$(echo "$FWD" | cut -d' ' -f1)
+          PORTS=$(echo "$FWD" | cut -d' ' -f2)
+          LOCAL_PORT=$(echo "$PORTS" | cut -d: -f1)
+          # Check if an oc port-forward process is running for this port
+          if pgrep -f "oc port-forward.*${LOCAL_PORT}:" > /dev/null 2>&1; then
+            continue
+          fi
+          echo "  Port-forward for $SVC $PORTS is dead — restarting"
+          nohup oc port-forward "$SVC" "$PORTS" -n "{{._NS}}" \
+            >> "{{.TEST_DIR}}/port-forward.log" 2>&1 &
+          RESTARTED=1
+        done
+        if [ "$RESTARTED" -eq 1 ]; then
+          sleep 2
+          echo "OK: port-forwards restored"
+        fi
 
   _swap-collector-config-oidc:
     desc: Replace collector config with OIDC-enabled variant and restart
@@ -358,7 +386,7 @@ tasks:
           GF_AUTH_GENERIC_OAUTH_AUTH_URL="${KC_REALM}/protocol/openid-connect/auth" \
           GF_AUTH_GENERIC_OAUTH_TOKEN_URL="${KC_REALM}/protocol/openid-connect/token" \
           GF_AUTH_GENERIC_OAUTH_API_URL="${KC_REALM}/protocol/openid-connect/userinfo" \
-          GF_AUTH_SIGNOUT_REDIRECT_URL="${KC_REALM}/protocol/openid-connect/logout"
+          GF_AUTH_SIGNOUT_REDIRECT_URL="${KC_REALM}/protocol/openid-connect/logout?post_logout_redirect_uri="
         oc rollout status deployment/grafana -n "{{._NS}}" --timeout=60s
         # Restart Grafana port-forward — rollout replaced the pod
         pkill -f "oc port-forward.*svc/grafana" 2>/dev/null || true
@@ -417,11 +445,10 @@ tasks:
     status:
       - '[ "{{.MODE}}" = "quadlet" ]'
     cmds:
-      - task: _start-keycloak
+      - task: _ensure-port-forwards
       - task: _wait-keycloak
       - task: _swap-grafana-oidc
       - defer: { task: _swap-grafana-local }
-      - defer: { task: _stop-keycloak }
       - |
         if [ ! -f "{{.TEST_DIR}}/service-ca.crt" ]; then
           echo "ERROR: service CA cert not found at {{.TEST_DIR}}/service-ca.crt"
@@ -429,7 +456,7 @@ tasks:
           exit 1
         fi
         mkdir -p "{{.TEST_DIR}}"
-        CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt"
+        case "{{.TEST_DIR}}" in /*) CA_CERT="{{.TEST_DIR}}/service-ca.crt" ;; *) CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt" ;; esac
         VENOM_ARGS=(
           "{{.INTEGRATION_DIR}}/grafana-oidc-wiring.venom.yml"
           --lib-dir "{{.INTEGRATION_DIR}}/lib"
@@ -437,7 +464,6 @@ tasks:
           --var "ca_cert=${CA_CERT}"
           --var "keycloak_port={{.KEYCLOAK_PORT}}"
         )
-        # Both CRC and quadlet access Grafana/Keycloak via port-forward to localhost
         VENOM_ARGS+=(
           --var "grafana_host=localhost"
           --var "keycloak_host=localhost"
@@ -447,11 +473,10 @@ tasks:
   test-oidc:
     desc: Run OIDC auth boundary test suite
     cmds:
-      - task: _start-keycloak
+      - task: _ensure-port-forwards
       - task: _wait-keycloak
       - task: _swap-collector-config-oidc
       - defer: { task: _swap-collector-config-local }
-      - defer: { task: _stop-keycloak }
       - |
         # --- OIDC diagnostic: capture state BEFORE venom runs ---
         DIAG="{{.TEST_DIR}}/diag-oidc-pre.txt"
@@ -460,37 +485,15 @@ tasks:
           {
             echo "=== timestamp: $(date -Iseconds) ==="
             echo "=== mode: quadlet ==="
-
             echo ""
             echo "=== Collector service status ==="
             systemctl --user status complytime-collector.service --no-pager 2>&1 || true
-
             echo ""
             echo "=== Keycloak service status ==="
             systemctl --user status complytime-keycloak.service --no-pager 2>&1 || true
-
-            echo ""
-            echo "=== Collector logs (OIDC/auth/error) ==="
-            journalctl --user -u complytime-collector --no-pager -n 200 2>&1 \
-              | grep -iE 'oidc|authenticat|extension|error|fail|issuer|jwks|audience|provider' \
-              || echo "(no matching lines)"
-
-            echo ""
-            echo "=== Collector env file ==="
-            cat "{{.QUADLET_RUNTIME}}/env/collector.env" 2>&1 || echo "(not found)"
-
-            echo ""
-            echo "=== Collector config (first 20 lines) ==="
-            head -20 "{{.QUADLET_RUNTIME}}/configs/collector-config.yaml" 2>&1 || echo "(not found)"
-
-            echo ""
-            echo "=== Keycloak discovery (from host) ==="
-            curl -sf "http://localhost:{{.KEYCLOAK_PORT}}/realms/complytime/.well-known/openid-configuration" 2>&1 \
-              | head -5 || echo "FAILED: cannot reach Keycloak OIDC discovery"
-
             echo ""
             echo "=== No-token POST (expect 401 if OIDC enforced) ==="
-            CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt"
+            case "{{.TEST_DIR}}" in /*) CA_CERT="{{.TEST_DIR}}/service-ca.crt" ;; *) CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt" ;; esac
             CODE=$(curl -s -o /dev/null -w '%{http_code}' \
               --http1.1 --cacert "$CA_CERT" \
               --resolve "localhost:8088:127.0.0.1" \
@@ -504,100 +507,17 @@ tasks:
           {
             echo "=== timestamp: $(date -Iseconds) ==="
             echo "=== mode: crc ==="
-
-            echo ""
-            echo "=== ConfigMap content (first 20 lines) ==="
-            oc get configmap collector-config -n "$NS" \
-              -o jsonpath='{.data.otel-collector\.yaml}' 2>&1 | head -20
-
             echo ""
             echo "=== Collector env vars ==="
             oc set env deployment/collector -n "$NS" --list 2>&1
-
-            echo ""
-            echo "=== Collector pod ==="
-            oc get pods -n "$NS" -l app=collector -o wide 2>&1
-
             echo ""
             echo "=== Collector logs (OIDC/auth/error) ==="
-            oc logs deployment/collector -n "$NS" --tail=200 2>&1 \
+            oc logs deployment/collector -n "$NS" --tail=50 2>&1 \
               | grep -iE 'oidc|authenticat|extension|error|fail|issuer|jwks|audience|provider' \
               || echo "(no matching lines)"
-
-            echo ""
-            echo "=== Collector FULL startup logs (last 50 lines) ==="
-            oc logs deployment/collector -n "$NS" --tail=50 2>&1
-
-            echo ""
-            echo "=== Collector binary and components ==="
-            POD_C=$(oc get pods -n "$NS" -l app=collector -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-            if [ -n "$POD_C" ]; then
-              echo "--- process list ---"
-              oc exec "$POD_C" -n "$NS" -- ps aux 2>&1 || oc exec "$POD_C" -n "$NS" -- cat /proc/1/cmdline 2>&1 | tr '\0' ' ' || echo "(cannot list processes)"
-              echo ""
-              echo "--- components command ---"
-              BIN=$(oc exec "$POD_C" -n "$NS" -- cat /proc/1/cmdline 2>/dev/null | tr '\0' ' ' | awk '{print $1}')
-              if [ -n "$BIN" ]; then
-                oc exec "$POD_C" -n "$NS" -- "$BIN" components 2>&1 || echo "(components subcommand not available)"
-              fi
-            fi
-
-            echo ""
-            echo "=== Keycloak pod ==="
-            oc get pods -n "$NS" -l app=keycloak -o wide 2>&1
-
-            echo ""
-            echo "=== Keycloak svc ==="
-            oc get svc keycloak -n "$NS" 2>&1 || echo "(not found)"
-
-            echo ""
-            echo "=== Keycloak discovery from collector pod ==="
-            POD=$(oc get pods -n "$NS" -l app=collector -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-            if [ -n "$POD" ]; then
-              oc exec "$POD" -n "$NS" -- curl -sf \
-                "http://keycloak:8080/realms/complytime/.well-known/openid-configuration" 2>&1 \
-                | head -5 || echo "FAILED: collector pod cannot reach keycloak"
-            else
-              echo "FAILED: no collector pod found"
-            fi
-
-            echo ""
-            echo "=== Port-forward processes ==="
-            ps aux | grep 'port-forward' | grep -v grep || echo "(none)"
-
-            echo ""
-            echo "=== Effective config from disk (FULL file) ==="
-            if [ -n "$POD_C" ]; then
-              oc exec "$POD_C" -n "$NS" -- cat /etc/otel-collector.yaml 2>&1
-            fi
-
-            echo ""
-            echo "=== ALL collector logs (grep for oidc/auth/error/extension) ==="
-            oc logs deployment/collector -n "$NS" 2>&1 \
-              | grep -iE 'oidc|authenticat|auth|extension|error|fail|issuer|jwks|audience|provider|warn' \
-              || echo "(no matching lines)"
-
-            echo ""
-            echo "=== No-token POST from INSIDE pod (localhost, no TLS) ==="
-            if [ -n "$POD_C" ]; then
-              oc exec "$POD_C" -n "$NS" -- curl -sv -o /dev/null -w 'HTTP_CODE=%{http_code}' \
-                -X POST -H "Content-Type: application/json" \
-                -d '{"activity_id":0,"category_uid":6,"class_uid":6007,"metadata":{"product":{"name":"diag"}},"status":"success","status_id":1,"policy":{"uid":"diag"}}' \
-                "http://localhost:8088/eventsource/receiver" 2>&1 || echo "(curl not available in container)"
-            fi
-
-            echo ""
-            echo "=== No-token POST from INSIDE pod (localhost, HTTPS, skip verify) ==="
-            if [ -n "$POD_C" ]; then
-              oc exec "$POD_C" -n "$NS" -- curl -sk -o /dev/null -w 'HTTP_CODE=%{http_code}' \
-                -X POST -H "Content-Type: application/json" \
-                -d '{"activity_id":0,"category_uid":6,"class_uid":6007,"metadata":{"product":{"name":"diag"}},"status":"success","status_id":1,"policy":{"uid":"diag"}}' \
-                "https://localhost:8088/eventsource/receiver" 2>&1 || echo "(curl not available in container)"
-            fi
-
             echo ""
             echo "=== No-token POST via port-forward (expect 401 if OIDC enforced) ==="
-            CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt"
+            case "{{.TEST_DIR}}" in /*) CA_CERT="{{.TEST_DIR}}/service-ca.crt" ;; *) CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt" ;; esac
             CHOST="collector.{{._NS}}.svc"
             CODE=$(curl -s -o /dev/null -w '%{http_code}' \
               --http1.1 --cacert "$CA_CERT" \
@@ -619,7 +539,7 @@ tasks:
           exit 1
         fi
         mkdir -p "{{.TEST_DIR}}"
-        CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt"
+        case "{{.TEST_DIR}}" in /*) CA_CERT="{{.TEST_DIR}}/service-ca.crt" ;; *) CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt" ;; esac
         VENOM_ARGS=(
           "{{.INTEGRATION_DIR}}/oidc-auth.venom.yml"
           --lib-dir "{{.INTEGRATION_DIR}}/lib"
@@ -635,6 +555,67 @@ tasks:
         else
           VENOM_ARGS+=(
             --var "collector_host=collector.{{._NS}}.svc"
+            --var "keycloak_host=localhost"
+          )
+        fi
+        venom run "${VENOM_ARGS[@]}" -vv
+
+  test-otlp-oidc:
+    desc: Run OTLP OIDC auth boundary test suite
+    cmds:
+      - task: _ensure-port-forwards
+      - task: _wait-keycloak
+      - task: _swap-collector-config-oidc
+      - defer: { task: _swap-collector-config-local }
+      - |
+        mkdir -p "{{.TEST_DIR}}"
+        VENOM_ARGS=(
+          "{{.INTEGRATION_DIR}}/otlp-oidc-auth.venom.yml"
+          --lib-dir "{{.INTEGRATION_DIR}}/lib"
+          --output-dir "{{.TEST_DIR}}"
+          --var "keycloak_port={{.KEYCLOAK_PORT}}"
+        )
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          VENOM_ARGS+=(
+            --var "otlp_host=localhost"
+            --var "keycloak_host=localhost"
+          )
+        else
+          VENOM_ARGS+=(
+            --var "otlp_host=localhost"
+            --var "keycloak_host=localhost"
+          )
+        fi
+        venom run "${VENOM_ARGS[@]}" -vv
+
+  test-ingest:
+    desc: Run complyctl OTLP ingest test suite (requires GITHUB_TOKEN)
+    cmds:
+      - task: _ensure-port-forwards
+      - task: _wait-keycloak
+      - |
+        if [ ! -f "{{.TEST_DIR}}/service-ca.crt" ]; then
+          echo "ERROR: service CA cert not found at {{.TEST_DIR}}/service-ca.crt"
+          echo "  Run: task integration:setup"
+          exit 1
+        fi
+        mkdir -p "{{.TEST_DIR}}"
+        case "{{.TEST_DIR}}" in /*) CA_CERT="{{.TEST_DIR}}/service-ca.crt" ;; *) CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt" ;; esac
+        VENOM_ARGS=(
+          "{{.INTEGRATION_DIR}}/complyctl-ingest.venom.yml"
+          --lib-dir "{{.INTEGRATION_DIR}}/lib"
+          --output-dir "{{.TEST_DIR}}"
+          --var "ca_cert=${CA_CERT}"
+          --var "keycloak_port={{.KEYCLOAK_PORT}}"
+        )
+        if [ "{{.MODE}}" = "quadlet" ]; then
+          VENOM_ARGS+=(
+            --var "loki_host=localhost"
+            --var "keycloak_host=localhost"
+          )
+        else
+          VENOM_ARGS+=(
+            --var "loki_host=loki.{{._NS}}.svc"
             --var "keycloak_host=localhost"
           )
         fi
@@ -731,8 +712,13 @@ tasks:
         fi
         # complyctl writes a .complytime/ log dir in cwd — move it to .test-output/
         if [ -d .complytime ]; then
-          rm -rf "../../{{.TEST_DIR}}/.complytime"
-          mv .complytime "../../{{.TEST_DIR}}/"
+          TEST_OUT="{{.TEST_DIR}}"
+          # Resolve relative TEST_DIR against the repo root (we're in tests/integration/)
+          if [[ "$TEST_OUT" != /* ]]; then
+            TEST_OUT="../../$TEST_OUT"
+          fi
+          rm -rf "${TEST_OUT}/.complytime"
+          mv .complytime "${TEST_OUT}/"
         fi
 
   test:
@@ -744,6 +730,8 @@ tasks:
       - task: test-pull
       - task: test-pipeline
       - task: test-oidc
+      - task: test-otlp-oidc
+      - task: test-ingest
       - task: test-grafana-oidc
 
   _cleanup:
@@ -811,7 +799,8 @@ tasks:
         sleep 1
         mkdir -p "{{.TEST_DIR}}"
 
-        for FWD in "svc/collector 8088:8088" "svc/collector 4318:4318" "svc/collector 4317:4317" \
+        for FWD in "svc/keycloak {{.KEYCLOAK_PORT}}:8080" \
+                   "svc/collector 8088:8088" "svc/collector 4318:4318" "svc/collector 4317:4317" \
                    "svc/loki 3100:3100" "svc/rustfs 9000:9000" "svc/grafana 3000:3000"; do
           SVC=$(echo "$FWD" | cut -d' ' -f1)
           PORTS=$(echo "$FWD" | cut -d' ' -f2)
@@ -821,11 +810,15 @@ tasks:
           echo "  Forwarding $SVC $PORTS (pid $!)"
         done
 
-        # Wait for collector webhook to become reachable
+        # Wait for collector webhook to become reachable.
+        # With OIDC enabled, unauthenticated requests return 401 — that still
+        # proves the port-forward is working.
         echo "  Waiting for port-forwards to establish..."
         for i in $(seq 1 15); do
-          if curl -sf -k https://localhost:8088/eventreceiver/healthcheck >/dev/null 2>&1; then
-            echo "OK: port-forwards ready"
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' -k \
+            https://localhost:8088/eventreceiver/healthcheck 2>/dev/null) || CODE="000"
+          if [ "$CODE" = "200" ] || [ "$CODE" = "401" ]; then
+            echo "OK: port-forwards ready (HTTP $CODE)"
             echo "  Log: {{.TEST_DIR}}/port-forward.log"
             echo "  Stop: task integration:port-forward-stop"
             exit 0
@@ -870,6 +863,8 @@ tasks:
   test-pipeline:
     desc: Run evidence pipeline test suite
     cmds:
+      - task: _ensure-port-forwards
+      - task: _wait-keycloak
       - |
         if [ ! -f "{{.TEST_DIR}}/service-ca.crt" ]; then
           echo "ERROR: service CA cert not found at {{.TEST_DIR}}/service-ca.crt"
@@ -877,7 +872,7 @@ tasks:
           exit 1
         fi
         mkdir -p "{{.TEST_DIR}}"
-        CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt"
+        case "{{.TEST_DIR}}" in /*) CA_CERT="{{.TEST_DIR}}/service-ca.crt" ;; *) CA_CERT="$(pwd)/{{.TEST_DIR}}/service-ca.crt" ;; esac
         VENOM_ARGS=(
           "{{.INTEGRATION_DIR}}/evidence-pipeline.venom.yml"
           --lib-dir "{{.INTEGRATION_DIR}}/lib"
@@ -897,17 +892,23 @@ tasks:
             --var "loki_host=loki.{{._NS}}.svc"
           )
         fi
+        VENOM_ARGS+=(
+          --var "keycloak_host=localhost"
+          --var "keycloak_port={{.KEYCLOAK_PORT}}"
+        )
         venom run "${VENOM_ARGS[@]}" -vv --stop-on-failure
 
   check-stack:
-    desc: Verify the stack is reachable
+    desc: Verify the stack is reachable and OIDC is enforced
     internal: true
     cmds:
       - |
-        if curl -sf -k https://localhost:8088/eventreceiver/healthcheck >/dev/null 2>&1; then
-          echo "OK: collector webhook reachable (mode={{.MODE}})"
+        CODE=$(curl -s -o /dev/null -w '%{http_code}' -k \
+          "https://localhost:8088/eventreceiver/healthcheck" 2>/dev/null) || CODE="000"
+        if [ "$CODE" = "200" ] || [ "$CODE" = "401" ]; then
+          echo "OK: collector webhook reachable (HTTP $CODE, mode={{.MODE}})"
         else
-          echo "ERROR: collector webhook not reachable at https://localhost:8088"
+          echo "ERROR: collector webhook not reachable at https://localhost:8088 (HTTP $CODE)"
           if [ "{{.MODE}}" = "quadlet" ]; then
             echo "  Ensure the stack is running: task quadlet:start"
           else

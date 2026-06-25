@@ -18,7 +18,7 @@ steps:
           "http://{{.input.keycloak_host}}:{{.input.keycloak_port}}/realms/complytime/protocol/openid-connect/token" \
           -H "Content-Type: application/x-www-form-urlencoded" \
           -d "grant_type=client_credentials&client_id={{.input.client_id}}&client_secret={{.input.client_secret}}" \
-          2>/dev/null) || RESPONSE=$'\n000'
+          2>/dev/null) || RESPONSE=$(printf '\n000')
         HTTP_CODE=$(echo "$RESPONSE" | tail -1)
         BODY=$(echo "$RESPONSE" | sed '$d')
         if [ "$HTTP_CODE" = "200" ]; then

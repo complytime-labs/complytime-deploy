@@ -19,8 +19,17 @@ trivy/v0.71.1/linux/amd64/trivy_0.71.1_Linux-64bit.tar.gz: 3cbae37cd440cd8676e5c
 # yq v4.53.3
 yq/v4.53.3/linux/amd64/yq_linux_amd64: fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4
 
-# complyctl v1.0.0-alpha.0
-complyctl/v1.0.0-alpha.0/linux/x86_64/complyctl_linux_x86_64.tar.gz: cf06218076fcec809065e615abd29582527915d569691493fe0e95a03c9302b7
+# complyctl v1.0.0-beta.0
+complyctl/v1.0.0-beta.0/linux/x86_64/complyctl_linux_x86_64.tar.gz: 2be0d61ec95d4d6bdbcd9778b3ccc6c2ffab86af8861329bb6dcbd3bf12741e9
+
+# snappy v0.2.4
+snappy/v0.2.4/linux/amd64/snappy-v0.2.4-linux-amd64: d39bc9a6815b8f199013c5011cb02aec6df032e89c01c36aea53bc809297188e
+
+# ampel v1.3.1
+ampel-cli/v1.3.1/linux/amd64/ampel-v1.3.1-linux-amd64: 2b8c30aadddea053d18a4da792c0dc4d4a3433ea87319ffd629bf0eb9c0b66b9
+
+# complyctl-provider-ampel v0.1.0
+complytime-providers/v0.1.0/linux/x86_64/complyctl-provider-ampel_linux_x86_64.tar.gz: 26305ebacf8f422d909ed150cc603445767df779b593752bbf76cdb68a526f14
 
 # venom v1.3.0
 venom/v1.3.0/linux/x86_64/venom.linux-amd64: 89832ec25e820c605cf0d3c09122e60bad43d13c1724aa6d375ef7109fbfe201

@@ -1,5 +1,5 @@
 # OIDC-enabled collector config — used only during OIDC integration tests.
-# Identical to collector-local.yaml except: OIDC extension added, auth on webhook.
+# Identical to collector-local.yaml except: OIDC extension added, auth on webhook and OTLP.
 extensions:
   oidc:
     issuer_url: ${env:OIDC_ISSUER_URL}
@@ -24,8 +24,12 @@ receivers:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: oidc
       http:
         endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: oidc
 
 processors:
   batch:

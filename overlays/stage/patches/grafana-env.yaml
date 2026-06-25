@@ -56,7 +56,7 @@ spec:
                   name: grafana-oidc-secret
                   key: client_secret
             - name: GF_AUTH_GENERIC_OAUTH_SCOPES
-              value: "openid profile email"
+              value: "openid email profile offline_access roles"
             - name: GF_AUTH_GENERIC_OAUTH_AUTH_URL
               value: null
               valueFrom:
@@ -76,14 +76,22 @@ spec:
                   name: grafana-env
                   key: GF_AUTH_GENERIC_OAUTH_API_URL
             - name: GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH
-              value: "'Viewer'"
+              value: "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'editor') && 'Editor' || 'Viewer'"
             - name: GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT
               value: "false"
+            - name: GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH
+              value: "email"
+            - name: GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH
+              value: "username"
+            - name: GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH
+              value: "full_name"
+            - name: GF_AUTH_GENERIC_OAUTH_USE_REFRESH_TOKEN
+              value: "true"
             # Signout redirect: set this CI variable to the SSO logout endpoint.
             # Format for Keycloak/RHSSO:
-            #   https://<sso-host>/realms/<realm>/protocol/openid-connect/logout?redirect_uri=<grafana-root-url>
-            # The redirect_uri must be URL-encoded and registered as a valid
-            # redirect URI in the SSO client configuration.
+            #   https://<sso-host>/realms/<realm>/protocol/openid-connect/logout?post_logout_redirect_uri=<grafana-root-url>
+            # The post_logout_redirect_uri must be URL-encoded and registered
+            # in the SSO client's postLogoutRedirectUris.
             - name: GF_AUTH_SIGNOUT_REDIRECT_URL
               value: null
               valueFrom:

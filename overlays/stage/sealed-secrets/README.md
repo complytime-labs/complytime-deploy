@@ -68,23 +68,28 @@ oc create secret generic route-tls-certs \
   > route-tls-certs.yaml
 ```
 
-## Usage
+### grafana-admin-secret — Grafana admin password
 
-After creating the SealedSecret files, add them to `kustomization.yaml`:
-
-```yaml
-resources:
-  - ../../base
-  - routes.yaml
-  - sealed-secrets/aws-creds.yaml
-  - sealed-secrets/grafana-oidc-secret.yaml
-  - sealed-secrets/quay-io-pull-secret.yaml
-  - sealed-secrets/route-tls-certs.yaml
+```bash
+oc create secret generic grafana-admin-secret \
+  --from-literal=admin_password=<your-admin-password> \
+  -n complytime-stage \
+  --dry-run=client -o yaml \
+  | kubeseal --controller-namespace kube-system -o yaml \
+  > grafana-admin-secret.yaml
 ```
 
-Then deploy: `task sk:run -- stage`
+## Usage
 
-Skaffold's post-deploy hook automatically patches Routes with TLS certs from the `route-tls-certs` Secret after deployment.
+Sealed-secret files in this directory are applied automatically by
+Skaffold's **pre-deploy hook**, which runs
+`./scripts/apply-sealed-secrets.sh stage` before each deployment. You do
+not need to add them to `kustomization.yaml`.
+
+To deploy: `task sk:run -- stage`
+
+Skaffold's post-deploy hook then patches Routes with TLS certs from the
+`route-tls-certs` Secret.
 
 ## Re-sealing
 

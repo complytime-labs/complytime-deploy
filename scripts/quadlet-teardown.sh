@@ -11,7 +11,7 @@ echo "=== Tearing down ComplyTime Quadlet deployment ==="
 
 # Stop services
 echo "Stopping services..."
-systemctl --user stop complytime-collector complytime-grafana complytime-loki complytime-rustfs complytime-network 2>/dev/null || true
+systemctl --user stop complytime-collector complytime-grafana complytime-keycloak complytime-loki complytime-rustfs complytime-network 2>/dev/null || true
 
 # Remove quadlet unit files
 echo "Removing quadlet unit files..."
