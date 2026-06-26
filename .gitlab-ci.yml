@@ -7,6 +7,7 @@ variables:
 
 stages:
   - validate
+  - lifecycle
   - deploy-stage
   - deploy-production
 
@@ -88,6 +89,169 @@ validate-server-production:
   variables:
     VALIDATE_PROFILE: production
 
+# --- Lifecycle: manual ops jobs (independent of deploy) ---
+
+# Show pod status for the target environment.
+status-stage:
+  <<: *deploy-template
+  stage: lifecycle
+  rules:
+    - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
+      when: manual
+  needs:
+    - validate-server-stage
+  environment:
+    name: $CI_ENV_STAGE
+  script:
+    - |
+      if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
+        task sk:status NAMESPACE="$DEPLOY_NAMESPACE"
+      else
+        task sk:status -- stage
+      fi
+
+status-production:
+  <<: *deploy-template
+  stage: lifecycle
+  rules:
+    - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
+      when: manual
+  needs:
+    - validate-server-production
+  environment:
+    name: $CI_ENV_PRODUCTION
+  script:
+    - |
+      if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
+        task sk:status NAMESPACE="$DEPLOY_NAMESPACE"
+      else
+        task sk:status -- production
+      fi
+
+# Rolling restart of all deployments, then wait for rollout to complete.
+restart-stage:
+  <<: *deploy-template
+  stage: lifecycle
+  rules:
+    - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
+      when: manual
+  needs:
+    - validate-server-stage
+  environment:
+    name: $CI_ENV_STAGE
+  script:
+    - |
+      if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
+        task sk:restart --yes NAMESPACE="$DEPLOY_NAMESPACE"
+      else
+        task sk:restart --yes -- stage
+      fi
+
+restart-production:
+  <<: *deploy-template
+  stage: lifecycle
+  rules:
+    - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
+      when: manual
+  needs:
+    - validate-server-production
+  environment:
+    name: $CI_ENV_PRODUCTION
+  script:
+    - |
+      if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
+        task sk:restart --yes NAMESPACE="$DEPLOY_NAMESPACE"
+      else
+        task sk:restart --yes -- production
+      fi
+
+# Render final Kustomize/Skaffold manifests to the job log for inspection.
+render-stage:
+  <<: *deploy-template
+  stage: lifecycle
+  rules:
+    - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
+      when: manual
+  needs:
+    - validate-server-stage
+  environment:
+    name: $CI_ENV_STAGE
+  script:
+    - |
+      if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
+        task sk:render NAMESPACE="$DEPLOY_NAMESPACE" BASE=stage
+      else
+        task sk:render -- stage
+      fi
+
+render-production:
+  <<: *deploy-template
+  stage: lifecycle
+  rules:
+    - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
+      when: manual
+  needs:
+    - validate-server-production
+  environment:
+    name: $CI_ENV_PRODUCTION
+  script:
+    - |
+      if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
+        task sk:render NAMESPACE="$DEPLOY_NAMESPACE" BASE=production
+      else
+        task sk:render -- production
+      fi
+
+# Delete all deployed resources, PVCs, and generated overlays. Destructive.
+teardown-stage:
+  <<: *deploy-template
+  stage: lifecycle
+  rules:
+    - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
+      when: manual
+  needs:
+    - validate-server-stage
+  environment:
+    name: $CI_ENV_STAGE
+  script:
+    - |
+      if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
+        task sk:delete --yes NAMESPACE="$DEPLOY_NAMESPACE" BASE=stage
+      else
+        task sk:delete --yes -- stage
+      fi
+  artifacts:
+    paths:
+      - overlays/custom-*
+    expire_in: 7 days
+    when: always
+
+teardown-production:
+  <<: *deploy-template
+  stage: lifecycle
+  rules:
+    - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
+      when: manual
+  needs:
+    - validate-server-production
+  environment:
+    name: $CI_ENV_PRODUCTION
+  script:
+    - |
+      if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
+        task sk:delete --yes NAMESPACE="$DEPLOY_NAMESPACE" BASE=production
+      else
+        task sk:delete --yes -- production
+      fi
+  artifacts:
+    paths:
+      - overlays/custom-*
+    expire_in: 7 days
+    when: always
+
+# --- Deploy: manual deployment jobs ---
+
+# Deploy the application stack via Skaffold (Kustomize + oc apply).
 deploy-stage:
   <<: *deploy-template
   stage: deploy-stage

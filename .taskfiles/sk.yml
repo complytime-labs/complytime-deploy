@@ -319,9 +319,51 @@ tasks:
         echo "Lint sync check passed — all ConfigMap/Secret references match apply-sealed-secrets.sh"
 
   status:
-    desc: Show pod status in the deployment namespace
+    desc: "Show pod status (usage: task sk:status, task sk:status -- stage, or task sk:status NAMESPACE=foo)"
+    vars:
+      RESOLVED_NS:
+        sh: |
+          if [ -n "{{.NAMESPACE}}" ]; then
+            echo "{{.NAMESPACE}}"
+          elif [ -n "{{.CLI_ARGS}}" ]; then
+            task sk:_resolve-namespace -- "{{.CLI_ARGS}}"
+          fi
+    preconditions:
+      - sh: '[ -z "{{.NAMESPACE}}" ] || [ -z "{{.CLI_ARGS}}" ]'
+        msg: "Cannot use NAMESPACE with a Skaffold profile. Use one or the other."
     cmds:
-      - oc get pods -n {{.NAMESPACE | default .DEFAULT_NAMESPACE}}
+      - oc get pods -n {{.RESOLVED_NS | default .DEFAULT_NAMESPACE}}
+
+  restart:
+    desc: "Rolling restart of all deployments (usage: task sk:restart, task sk:restart -- stage, or task sk:restart NAMESPACE=foo)"
+    vars:
+      RESOLVED_NS:
+        sh: |
+          if [ -n "{{.NAMESPACE}}" ]; then
+            echo "{{.NAMESPACE}}"
+          elif [ -n "{{.CLI_ARGS}}" ]; then
+            task sk:_resolve-namespace -- "{{.CLI_ARGS}}"
+          fi
+      TARGET_NS: "{{.RESOLVED_NS | default .DEFAULT_NAMESPACE}}"
+    preconditions:
+      - sh: '[ -z "{{.NAMESPACE}}" ] || [ -z "{{.CLI_ARGS}}" ]'
+        msg: "Cannot use NAMESPACE with a Skaffold profile. Use one or the other."
+    prompt: "This will rolling-restart all deployments in namespace {{.TARGET_NS}} on {{.OC_SERVER}}. Continue?"
+    cmds:
+      - |
+        DEPLOYS=$(oc get deploy -n "{{.TARGET_NS}}" -o name 2>/dev/null)
+        if [ -z "$DEPLOYS" ]; then
+          echo "No deployments found in namespace {{.TARGET_NS}}"
+          exit 0
+        fi
+        for d in $DEPLOYS; do
+          echo "Restarting $d..."
+          oc rollout restart "$d" -n "{{.TARGET_NS}}"
+        done
+        echo "Waiting for rollouts to complete..."
+        for d in $DEPLOYS; do
+          oc rollout status "$d" -n "{{.TARGET_NS}}" --timeout=300s
+        done
 
   delete:
     desc: "Delete deployed resources and PVCs — DESTRUCTIVE (usage: task sk:delete, task sk:delete -- stage, or task sk:delete NAMESPACE=foo)"
