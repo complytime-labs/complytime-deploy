@@ -256,13 +256,13 @@ Subsequent deploys skip this step if CI variables are already set. Setting `GF_S
 
 The Collector config uses OTel `${env:VAR}` substitution. These environment variables are set in the Collector deployment and patched per overlay:
 
-| Variable          | Purpose                                  | Base Default                                                              |
-|-------------------|------------------------------------------|---------------------------------------------------------------------------|
-| `OIDC_ISSUER_URL` | OIDC provider for webhook authentication | `""` (empty — set via [GitLab CI variable](#gitlab-ci-secret-management)) |
-| `AWS_REGION`      | AWS region for S3 export                 | `""` (empty — overlay must provide)                                       |
-| `S3_BUCKETNAME`   | S3 bucket for evidence storage           | `""` (empty — overlay must provide)                                       |
-| `S3_OBJ_DIR`  | S3 key prefix for evidence files         | `""` (empty — overlay must provide)                                       |
-| `S3_ENDPOINT`  | Custom S3 endpoint URL (for RustFS or non-AWS S3) | `""` (empty — AWS default; overlay provides for local/custom)             |
+| Variable          | Purpose                                           | Base Default                                                              |
+|-------------------|---------------------------------------------------|---------------------------------------------------------------------------|
+| `OIDC_ISSUER_URL` | OIDC provider for webhook authentication          | `""` (empty — set via [GitLab CI variable](#gitlab-ci-secret-management)) |
+| `AWS_REGION`      | AWS region for S3 export                          | `""` (empty — overlay must provide)                                       |
+| `S3_BUCKETNAME`   | S3 bucket for evidence storage                    | `""` (empty — overlay must provide)                                       |
+| `S3_OBJ_DIR`      | S3 key prefix for evidence files                  | `""` (empty — overlay must provide)                                       |
+| `S3_ENDPOINT`     | Custom S3 endpoint URL (for RustFS or non-AWS S3) | `""` (empty — AWS default; overlay provides for local/custom)             |
 
 ## Quick Start — OpenShift Local (CRC)
 
@@ -343,11 +343,11 @@ crc delete && crc setup && crc start
 
 Each environment has an overlay directory (`overlays/<env>/`) that customizes the base manifests. The base contains the full production configuration; overlays patch what differs.
 
-| Overlay      | Namespace          | Auth                            | Debug    | Secrets                         |
-|--------------|--------------------|---------------------------------|----------|---------------------------------|
+| Overlay      | Namespace          | Auth                                            | Debug    | Secrets                         |
+|--------------|--------------------|-------------------------------------------------|----------|---------------------------------|
 | `local`      | `complytime-dev`   | OIDC on collector (Keycloak), anonymous Grafana | Enabled  | Auto-created by deploy script   |
-| `stage`      | `complytime-stage` | OIDC auto-login (no login form) | Enabled  | GitLab CI vars or SealedSecrets |
-| `production` | `complytime-prod`  | OIDC auto-login (no login form) | Disabled | GitLab CI vars or SealedSecrets |
+| `stage`      | `complytime-stage` | OIDC auto-login (no login form)                 | Enabled  | GitLab CI vars or SealedSecrets |
+| `production` | `complytime-prod`  | OIDC auto-login (no login form)                 | Disabled | GitLab CI vars or SealedSecrets |
 
 **Admin break-glass login:** Stage and production disable the login form and auto-redirect to OIDC. To access the built-in admin account (e.g. for troubleshooting when SSO is down), navigate to:
 

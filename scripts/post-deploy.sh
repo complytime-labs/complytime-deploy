@@ -134,6 +134,29 @@ oc rollout status deployment/grafana -n "$NAMESPACE" --timeout=5m
 # See scripts/lib/grafana-url.sh for implementation details.
 grafana_auto_derive_urls
 
+# --- SSO redirect URI diagnostic ---
+# Print the exact URIs that must be registered in the SSO client.
+# This saves operators from reverse-engineering what Grafana sends.
+_root_url=$(oc get configmap grafana-env -n "$NAMESPACE" \
+	-o jsonpath='{.data.GF_SERVER_ROOT_URL}' 2>/dev/null) || :
+_signout_url=$(oc get configmap grafana-env -n "$NAMESPACE" \
+	-o jsonpath='{.data.GF_AUTH_SIGNOUT_REDIRECT_URL}' 2>/dev/null) || :
+
+if [[ -n "$_root_url" ]]; then
+	echo ""
+	echo "SSO client redirect URIs (must be registered in your IdP):"
+	echo "  Valid Redirect URI:        ${_root_url}/login/generic_oauth"
+	if [[ -n "$_signout_url" ]]; then
+		# Extract post_logout_redirect_uri value from the signout URL
+		_post_logout=$(echo "$_signout_url" | sed -n 's/.*post_logout_redirect_uri=\([^&]*\).*/\1/p')
+		if [[ -n "$_post_logout" ]]; then
+			# Decode percent-encoded value for human-readable output
+			_decoded=$(printf '%b' "${_post_logout//%/\\x}" 2>/dev/null || echo "$_post_logout")
+			echo "  Post-Logout Redirect URI:  $_decoded"
+		fi
+	fi
+fi
+
 echo ""
 echo "Deployment successful!"
 echo ""

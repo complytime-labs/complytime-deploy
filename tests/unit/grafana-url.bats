@@ -35,12 +35,13 @@ teardown() {
 }
 
 # --- Helper: write the oc mock -------------------------------------------
-# Usage: create_oc_mock <route_host> <configmap_exists> <root_url> <signout_url>
+# Usage: create_oc_mock <route_host> <configmap_exists> <root_url> <signout_url> [auth_url]
 create_oc_mock() {
 	local route_host="${1:-}"
 	local configmap_exists="${2:-true}"
 	local root_url="${3:-}"
 	local signout_url="${4:-}"
+	local auth_url="${5:-}"
 
 	cat >"$MOCK_BIN/oc" <<MOCK
 #!/bin/bash
@@ -57,6 +58,9 @@ case "\$*" in
 		;;
 	*"get configmap grafana-env"*jsonpath*GF_AUTH_SIGNOUT_REDIRECT_URL*)
 		echo "$signout_url"
+		;;
+	*"get configmap grafana-env"*jsonpath*GF_AUTH_GENERIC_OAUTH_AUTH_URL*)
+		echo "$auth_url"
 		;;
 	*"get configmap grafana-env"*)
 		if [[ "$configmap_exists" == "true" ]]; then
@@ -193,15 +197,15 @@ MOCK
 	[[ ! -s "$OC_PATCH_LOG" ]]
 }
 
-@test "empty signout URL — skips post_logout_redirect_uri patching" {
-	create_oc_mock "grafana.example.com" "true" "" ""
+@test "empty signout URL, no auth URL — skips post_logout_redirect_uri patching" {
+	create_oc_mock "grafana.example.com" "true" "" "" ""
 	source "$LIB_DIR/grafana-url.sh"
 
 	grafana_auto_derive_urls
 
 	# ROOT_URL should be patched (it's empty)
 	grep -q 'GF_SERVER_ROOT_URL' "$OC_PATCH_LOG"
-	# But no signout URL patch
+	# But no signout URL patch (no auth URL to derive from)
 	! grep -q 'GF_AUTH_SIGNOUT_REDIRECT_URL' "$OC_PATCH_LOG"
 }
 
@@ -230,10 +234,82 @@ MOCK
 }
 
 @test "no restart when nothing is patched" {
-	create_oc_mock "grafana.example.com" "true" "https://already-set" ""
+	create_oc_mock "grafana.example.com" "true" "https://already-set" "" ""
 	source "$LIB_DIR/grafana-url.sh"
 
 	grafana_auto_derive_urls
 
 	[[ ! -s "$OC_ROLLOUT_LOG" ]]
+}
+
+# ==========================================================================
+# Signout URL auto-derivation from auth URL
+# ==========================================================================
+
+@test "derives signout URL from auth URL when signout is empty" {
+	local auth_url="https://sso.example.com/realms/myrealm/protocol/openid-connect/auth"
+	create_oc_mock "grafana.example.com" "true" "https://grafana.example.com" "" "$auth_url"
+	source "$LIB_DIR/grafana-url.sh"
+
+	grafana_auto_derive_urls
+
+	grep -q 'GF_AUTH_SIGNOUT_REDIRECT_URL' "$OC_PATCH_LOG"
+	# Should derive logout URL by replacing /auth with /logout
+	grep -q 'openid-connect/logout?post_logout_redirect_uri=https%3A%2F%2Fgrafana.example.com' "$OC_PATCH_LOG"
+}
+
+@test "derives signout URL using route-derived root URL when root URL is also empty" {
+	local auth_url="https://sso.example.com/realms/myrealm/protocol/openid-connect/auth"
+	create_oc_mock "grafana.example.com" "true" "" "" "$auth_url"
+	source "$LIB_DIR/grafana-url.sh"
+
+	grafana_auto_derive_urls
+
+	# Both ROOT_URL and SIGNOUT should be patched
+	grep -q 'GF_SERVER_ROOT_URL' "$OC_PATCH_LOG"
+	grep -q 'GF_AUTH_SIGNOUT_REDIRECT_URL' "$OC_PATCH_LOG"
+	# Signout should use the route-derived URL
+	grep -q 'post_logout_redirect_uri=https%3A%2F%2Fgrafana.example.com' "$OC_PATCH_LOG"
+}
+
+@test "skips signout derivation when auth URL does not end in /auth" {
+	local auth_url="https://sso.example.com/realms/myrealm/protocol/openid-connect/authorize"
+	create_oc_mock "grafana.example.com" "true" "https://grafana.example.com" "" "$auth_url"
+	source "$LIB_DIR/grafana-url.sh"
+
+	grafana_auto_derive_urls
+
+	# No signout URL patch — can't safely derive from non-standard path
+	! grep -q 'GF_AUTH_SIGNOUT_REDIRECT_URL' "$OC_PATCH_LOG"
+}
+
+@test "skips signout derivation when auth URL is also empty" {
+	create_oc_mock "grafana.example.com" "true" "https://grafana.example.com" "" ""
+	source "$LIB_DIR/grafana-url.sh"
+
+	grafana_auto_derive_urls
+
+	! grep -q 'GF_AUTH_SIGNOUT_REDIRECT_URL' "$OC_PATCH_LOG"
+}
+
+@test "skips signout derivation when signout already set (CI wins)" {
+	local auth_url="https://sso.example.com/realms/myrealm/protocol/openid-connect/auth"
+	local signout="https://sso.example.com/realms/myrealm/protocol/openid-connect/logout?post_logout_redirect_uri=https%3A%2F%2Fci-set.example.com"
+	create_oc_mock "grafana.example.com" "true" "https://grafana.example.com" "$signout" "$auth_url"
+	source "$LIB_DIR/grafana-url.sh"
+
+	grafana_auto_derive_urls
+
+	# No signout URL patch — CI-set value wins
+	! grep -q 'GF_AUTH_SIGNOUT_REDIRECT_URL' "$OC_PATCH_LOG"
+}
+
+@test "triggers restart when signout URL is derived from auth URL" {
+	local auth_url="https://sso.example.com/realms/myrealm/protocol/openid-connect/auth"
+	create_oc_mock "grafana.example.com" "true" "https://grafana.example.com" "" "$auth_url"
+	source "$LIB_DIR/grafana-url.sh"
+
+	grafana_auto_derive_urls
+
+	grep -q 'rollout restart' "$OC_ROLLOUT_LOG"
 }

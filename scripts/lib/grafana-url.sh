@@ -46,6 +46,29 @@ grafana_auto_derive_urls() {
 		needs_restart=true
 	fi
 
+	# Derive signout URL from auth URL when signout URL is empty
+	if [[ -z "$current_signout_url" ]]; then
+		local current_auth_url
+		current_auth_url=$(oc get configmap grafana-env -n "$NAMESPACE" \
+			-o jsonpath='{.data.GF_AUTH_GENERIC_OAUTH_AUTH_URL}' 2>/dev/null) || :
+
+		if [[ -n "$current_auth_url" && "$current_auth_url" == */auth ]]; then
+			local effective_root_url="${current_root_url:-$derived_root_url}"
+			local encoded_root
+			encoded_root=$(jq -rn --arg v "$effective_root_url" '$v|@uri')
+			local logout_base="${current_auth_url%/auth}/logout"
+			current_signout_url="${logout_base}?post_logout_redirect_uri=${encoded_root}"
+
+			echo "Auto-deriving GF_AUTH_SIGNOUT_REDIRECT_URL from auth URL..."
+			local derived_signout_json
+			derived_signout_json=$(jq -n --arg v "$current_signout_url" '$v')
+			oc patch configmap grafana-env -n "$NAMESPACE" --type=merge \
+				-p "{\"data\":{\"GF_AUTH_SIGNOUT_REDIRECT_URL\":$derived_signout_json}}"
+			echo "  GF_AUTH_SIGNOUT_REDIRECT_URL set to $current_signout_url"
+			needs_restart=true
+		fi
+	fi
+
 	# Patch post_logout_redirect_uri in GF_AUTH_SIGNOUT_REDIRECT_URL if needed
 	if [[ -n "$current_signout_url" ]]; then
 		local encoded_root_url
