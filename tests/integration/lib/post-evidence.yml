@@ -6,6 +6,7 @@ input:
   collector_host: ""
   webhook_port: "8088"
   ca_cert: ""
+  token: ""
   status: "success"
   status_id: "1"
   timeout: "30"
@@ -62,17 +63,23 @@ steps:
       ATTEMPT=0
       while [ $(date +%s) -lt $DEADLINE ]; do
         ATTEMPT=$((ATTEMPT + 1))
+        AUTH_HEADER=""
+        if [ -n "{{.input.token}}" ]; then
+          AUTH_HEADER="Authorization: Bearer {{.input.token}}"
+        fi
         HTTP_CODE=$(curl -s -o /tmp/post_response.txt -w '%{http_code}' \
           --http1.1 \
           --cacert "{{.input.ca_cert}}" \
           --resolve "{{.input.collector_host}}:{{.input.webhook_port}}:127.0.0.1" \
           -X POST \
           -H "Content-Type: application/json" \
+          ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
           -d @/tmp/evidence_payload.json \
           "https://{{.input.collector_host}}:{{.input.webhook_port}}/eventsource/receiver" \
           2>/tmp/post_err.txt) || HTTP_CODE="000"
-        if [ "$HTTP_CODE" = "200" ]; then
-          echo "HTTP_STATUS=200 (attempt $ATTEMPT)"
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
+          # Definitive response — no need to retry.
+          echo "HTTP_STATUS=${HTTP_CODE}"
           rm -f /tmp/post_response.txt /tmp/post_err.txt /tmp/evidence_payload.json
           exit 0
         fi
@@ -88,7 +95,6 @@ steps:
       exit 1
     assertions:
       - result.code ShouldEqual 0
-      - result.systemout ShouldContainSubstring "HTTP_STATUS=200"
     vars:
       http_status:
         from: result.systemout

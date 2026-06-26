@@ -1,0 +1,106 @@
+name: OTLP OIDC authentication boundary
+vars:
+  keycloak_host: "localhost"
+  keycloak_port: "8180"
+  otlp_host: "localhost"
+  otlp_port: "4318"
+  _secret_beacon: "beacon-test-secret" # checkov:skip=CKV_SECRET_6:test fixture for local Keycloak dev instance, not a real secret
+  _secret_short_lived: "short-lived-secret" # checkov:skip=CKV_SECRET_6:test fixture for local Keycloak dev instance, not a real secret
+  _secret_wrong_aud: "wrong-aud-secret" # checkov:skip=CKV_SECRET_6:test fixture for local Keycloak dev instance, not a real secret
+secrets:
+  - _secret_beacon
+  - _secret_short_lived
+  - _secret_wrong_aud
+
+testcases:
+  # -- Positive: valid token accepted --------------------------------------
+
+  - name: OTLP POST with valid token returns 200
+    steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          valid_token:
+            from: result.access_token
+      - type: post-otlp-auth
+        otlp_host: "{{.otlp_host}}"
+        otlp_port: "{{.otlp_port}}"
+        token: "{{.valid_token}}"
+        assertions:
+          - result.status_code ShouldEqual "200"
+
+  # -- Negative: no token -------------------------------------------------
+
+  - name: OTLP POST without token returns 401
+    steps:
+      - type: post-otlp-auth
+        otlp_host: "{{.otlp_host}}"
+        otlp_port: "{{.otlp_port}}"
+        token: ""
+        assertions:
+          - result.status_code ShouldEqual "401"
+
+  # -- Negative: garbage token --------------------------------------------
+
+  - name: OTLP POST with garbage token returns 401
+    steps:
+      - type: post-otlp-auth
+        otlp_host: "{{.otlp_host}}"
+        otlp_port: "{{.otlp_port}}"
+        token: "this.is.not.a.valid.jwt"
+        assertions:
+          - result.status_code ShouldEqual "401"
+
+  # -- Negative: expired token --------------------------------------------
+
+  - name: OTLP POST with expired token returns 401
+    steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test-short-lived"
+        client_secret: "{{._secret_short_lived}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          short_lived_token:
+            from: result.access_token
+      - type: exec
+        script: |
+          echo "Waiting 8 seconds for token expiry..."
+          sleep 8
+          echo "DONE"
+        assertions:
+          - result.code ShouldEqual 0
+      - type: post-otlp-auth
+        otlp_host: "{{.otlp_host}}"
+        otlp_port: "{{.otlp_port}}"
+        token: "{{.short_lived_token}}"
+        assertions:
+          - result.status_code ShouldEqual "401"
+
+  # -- Negative: wrong audience -------------------------------------------
+
+  - name: OTLP POST with wrong-audience token returns 401
+    steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test-wrong-aud"
+        client_secret: "{{._secret_wrong_aud}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          wrong_aud_token:
+            from: result.access_token
+      - type: post-otlp-auth
+        otlp_host: "{{.otlp_host}}"
+        otlp_port: "{{.otlp_port}}"
+        token: "{{.wrong_aud_token}}"
+        assertions:
+          - result.status_code ShouldEqual "401"

@@ -111,10 +111,11 @@ if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
 	#   2. Set Access Type to "confidential"
 	#   3. Add valid redirect URIs:
 	#        - <GF_SERVER_ROOT_URL>/login/generic_oauth  (login callback)
-	#        - <GF_SERVER_ROOT_URL>/*                     (post-logout redirect)
+	#      Add post-logout redirect URIs (Keycloak: client > Advanced > postLogoutRedirectUris):
+	#        - <GF_SERVER_ROOT_URL>
 	#   4. Set client secret → store as GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET CI var
 	#   5. Set GF_SERVER_ROOT_URL to the exact public Grafana URL (with https://)
-	#      This must match the redirect_uri sent to the SSO provider.
+	#      This must match the redirect URI sent to the SSO provider.
 	#
 	# Common error: "Invalid parameter: redirect_uri"
 	#   → The redirect URI Grafana sends (<root_url>/login/generic_oauth)
@@ -139,9 +140,9 @@ if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
 		echo "  GF_AUTH_GENERIC_OAUTH_CLIENT_ID not set — OIDC disabled"
 	fi
 	# GF_AUTH_SIGNOUT_REDIRECT_URL format for Keycloak/RHSSO:
-	#   https://<sso-host>/realms/<realm>/protocol/openid-connect/logout?redirect_uri=<url-encoded-grafana-root-url>
-	# The redirect_uri value must also be registered in the SSO client's
-	# valid redirect URIs (alongside the login callback).
+	#   https://<sso-host>/realms/<realm>/protocol/openid-connect/logout?post_logout_redirect_uri=<url-encoded-grafana-root-url>
+	# The post_logout_redirect_uri value must be registered in the SSO
+	# client's postLogoutRedirectUris (Keycloak: client > Advanced).
 	apply_configmap grafana-env \
 		oc create configmap grafana-env \
 		--from-literal=GF_AUTH_GENERIC_OAUTH_ENABLED="$GRAFANA_OAUTH_ENABLED" \

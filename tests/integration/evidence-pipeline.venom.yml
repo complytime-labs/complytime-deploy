@@ -8,21 +8,52 @@ vars:
   s3_bucket: "complytime-evidence"
   ca_cert: ".test-output/service-ca.crt"
   catalog_id: "repo-branch-protection"
+  keycloak_host: "localhost"
+  keycloak_port: "8180"
+  _secret_beacon: "beacon-test-secret" # checkov:skip=CKV_SECRET_6:test fixture for local Keycloak dev instance, not a real secret
+secrets:
+  - _secret_beacon
 
 testcases:
   - name: Collector webhook is reachable
     steps:
-      - type: http
-        url: "https://{{.collector_host}}:{{.webhook_port}}/eventreceiver/healthcheck"
-        method: GET
-        tls_root_ca: "{{.ca_cert}}"
-        resolve:
-          - "{{.collector_host}}:{{.webhook_port}}:127.0.0.1"
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
         assertions:
-          - result.statuscode ShouldEqual 200
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          health_token:
+            from: result.access_token
+      - type: exec
+        script: |
+          HTTP_CODE=$(curl -s \
+            --http1.1 \
+            --cacert "{{.ca_cert}}" \
+            --resolve "{{.collector_host}}:{{.webhook_port}}:127.0.0.1" \
+            -H "Authorization: Bearer {{.health_token}}" \
+            -o /dev/null -w '%{http_code}' \
+            "https://{{.collector_host}}:{{.webhook_port}}/eventreceiver/healthcheck" \
+            2>/dev/null) || HTTP_CODE="000"
+          echo "${HTTP_CODE}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldEqual "200"
 
   - name: "POST pull-request-enforcement"
     steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          post_token:
+            from: result.access_token
       - type: post-evidence
         control_id: "pull-request-enforcement"
         requirement_id: "require-pull-request"
@@ -30,11 +61,22 @@ testcases:
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
+        token: "{{.post_token}}"
         assertions:
           - result.status_code ShouldEqual "200"
 
   - name: "POST approval-requirements"
     steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          post_token:
+            from: result.access_token
       - type: post-evidence
         control_id: "approval-requirements"
         requirement_id: "require-approval"
@@ -42,11 +84,22 @@ testcases:
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
+        token: "{{.post_token}}"
         assertions:
           - result.status_code ShouldEqual "200"
 
   - name: "POST force-push-restriction"
     steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          post_token:
+            from: result.access_token
       - type: post-evidence
         control_id: "force-push-restriction"
         requirement_id: "restrict-force-push"
@@ -54,11 +107,22 @@ testcases:
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
+        token: "{{.post_token}}"
         assertions:
           - result.status_code ShouldEqual "200"
 
   - name: "POST admin-bypass-prevention"
     steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          post_token:
+            from: result.access_token
       - type: post-evidence
         control_id: "admin-bypass-prevention"
         requirement_id: "prevent-admin-bypass"
@@ -66,11 +130,22 @@ testcases:
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
+        token: "{{.post_token}}"
         assertions:
           - result.status_code ShouldEqual "200"
 
   - name: "POST code-owner-enforcement"
     steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          post_token:
+            from: result.access_token
       - type: post-evidence
         control_id: "code-owner-enforcement"
         requirement_id: "require-code-owners"
@@ -78,6 +153,7 @@ testcases:
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
+        token: "{{.post_token}}"
         assertions:
           - result.status_code ShouldEqual "200"
 
@@ -187,6 +263,16 @@ testcases:
 
   - name: "POST status-test-failure"
     steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          post_token:
+            from: result.access_token
       - type: post-evidence
         control_id: "status-test-failure"
         requirement_id: "require-status-test"
@@ -194,6 +280,7 @@ testcases:
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
+        token: "{{.post_token}}"
         status: "failure"
         status_id: "2"
         assertions:
@@ -201,6 +288,16 @@ testcases:
 
   - name: "POST status-test-not-run"
     steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          post_token:
+            from: result.access_token
       - type: post-evidence
         control_id: "status-test-not-run"
         requirement_id: "require-status-test"
@@ -208,6 +305,7 @@ testcases:
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
+        token: "{{.post_token}}"
         status: "not_run"
         status_id: "0"
         assertions:
@@ -215,6 +313,16 @@ testcases:
 
   - name: "POST status-test-needs-review"
     steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          post_token:
+            from: result.access_token
       - type: post-evidence
         control_id: "status-test-needs-review"
         requirement_id: "require-status-test"
@@ -222,6 +330,7 @@ testcases:
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
+        token: "{{.post_token}}"
         status: "needs_review"
         status_id: "3"
         assertions:
@@ -229,6 +338,16 @@ testcases:
 
   - name: "POST status-test-not-applicable"
     steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          post_token:
+            from: result.access_token
       - type: post-evidence
         control_id: "status-test-not-applicable"
         requirement_id: "require-status-test"
@@ -236,6 +355,7 @@ testcases:
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
+        token: "{{.post_token}}"
         status: "not_applicable"
         status_id: "4"
         assertions:
@@ -243,6 +363,16 @@ testcases:
 
   - name: "POST status-test-error"
     steps:
+      - type: get-oidc-token
+        keycloak_host: "{{.keycloak_host}}"
+        keycloak_port: "{{.keycloak_port}}"
+        client_id: "beacon-test"
+        client_secret: "{{._secret_beacon}}"
+        assertions:
+          - result.access_token ShouldNotBeEmpty
+        vars:
+          post_token:
+            from: result.access_token
       - type: post-evidence
         control_id: "status-test-error"
         requirement_id: "require-status-test"
@@ -250,6 +380,7 @@ testcases:
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
+        token: "{{.post_token}}"
         status: "error"
         status_id: "99"
         assertions:

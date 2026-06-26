@@ -109,11 +109,11 @@ MOCK
 }
 
 # ==========================================================================
-# redirect_uri tests — four branches
+# post_logout_redirect_uri tests — four branches
 # ==========================================================================
 
-@test "redirect_uri= at end of string — appends encoded URL" {
-	local signout="https://sso.example.com/logout?redirect_uri="
+@test "post_logout_redirect_uri= at end of string — appends encoded URL" {
+	local signout="https://sso.example.com/logout?post_logout_redirect_uri="
 	create_oc_mock "grafana.example.com" "true" "https://already-set" "$signout"
 	source "$LIB_DIR/grafana-url.sh"
 
@@ -124,19 +124,19 @@ MOCK
 	grep -q 'https%3A%2F%2Fgrafana.example.com' "$OC_PATCH_LOG"
 }
 
-@test "redirect_uri=& (empty, followed by &) — inserts encoded URL" {
-	local signout="https://sso.example.com/logout?redirect_uri=&extra=1"
+@test "post_logout_redirect_uri=& (empty, followed by &) — inserts encoded URL" {
+	local signout="https://sso.example.com/logout?post_logout_redirect_uri=&extra=1"
 	create_oc_mock "grafana.example.com" "true" "https://already-set" "$signout"
 	source "$LIB_DIR/grafana-url.sh"
 
 	grafana_auto_derive_urls
 
 	grep -q 'GF_AUTH_SIGNOUT_REDIRECT_URL' "$OC_PATCH_LOG"
-	# Should contain redirect_uri=<encoded>&extra=1
-	grep -q 'redirect_uri=https%3A%2F%2Fgrafana.example.com&extra=1' "$OC_PATCH_LOG"
+	# Should contain post_logout_redirect_uri=<encoded>&extra=1
+	grep -q 'post_logout_redirect_uri=https%3A%2F%2Fgrafana.example.com&extra=1' "$OC_PATCH_LOG"
 }
 
-@test "no redirect_uri param, URL has ? — appends &redirect_uri=..." {
+@test "no post_logout_redirect_uri param, URL has ? — appends &post_logout_redirect_uri=..." {
 	local signout="https://sso.example.com/logout?client_id=grafana"
 	create_oc_mock "grafana.example.com" "true" "https://already-set" "$signout"
 	source "$LIB_DIR/grafana-url.sh"
@@ -144,10 +144,10 @@ MOCK
 	grafana_auto_derive_urls
 
 	grep -q 'GF_AUTH_SIGNOUT_REDIRECT_URL' "$OC_PATCH_LOG"
-	grep -q 'client_id=grafana&redirect_uri=https%3A%2F%2Fgrafana.example.com' "$OC_PATCH_LOG"
+	grep -q 'client_id=grafana&post_logout_redirect_uri=https%3A%2F%2Fgrafana.example.com' "$OC_PATCH_LOG"
 }
 
-@test "no redirect_uri param, URL has no ? — appends ?redirect_uri=..." {
+@test "no post_logout_redirect_uri param, URL has no ? — appends ?post_logout_redirect_uri=..." {
 	local signout="https://sso.example.com/logout"
 	create_oc_mock "grafana.example.com" "true" "https://already-set" "$signout"
 	source "$LIB_DIR/grafana-url.sh"
@@ -155,11 +155,11 @@ MOCK
 	grafana_auto_derive_urls
 
 	grep -q 'GF_AUTH_SIGNOUT_REDIRECT_URL' "$OC_PATCH_LOG"
-	grep -q 'logout?redirect_uri=https%3A%2F%2Fgrafana.example.com' "$OC_PATCH_LOG"
+	grep -q 'logout?post_logout_redirect_uri=https%3A%2F%2Fgrafana.example.com' "$OC_PATCH_LOG"
 }
 
-@test "redirect_uri already has a value — skips (CI wins)" {
-	local signout="https://sso.example.com/logout?redirect_uri=https%3A%2F%2Fci-set.example.com"
+@test "post_logout_redirect_uri already has a value — skips (CI wins)" {
+	local signout="https://sso.example.com/logout?post_logout_redirect_uri=https%3A%2F%2Fci-set.example.com"
 	create_oc_mock "grafana.example.com" "true" "https://already-set" "$signout"
 	source "$LIB_DIR/grafana-url.sh"
 
@@ -193,7 +193,7 @@ MOCK
 	[[ ! -s "$OC_PATCH_LOG" ]]
 }
 
-@test "empty signout URL — skips redirect_uri patching" {
+@test "empty signout URL — skips post_logout_redirect_uri patching" {
 	create_oc_mock "grafana.example.com" "true" "" ""
 	source "$LIB_DIR/grafana-url.sh"
 
@@ -220,7 +220,7 @@ MOCK
 }
 
 @test "triggers restart when signout URL is patched" {
-	local signout="https://sso.example.com/logout?redirect_uri="
+	local signout="https://sso.example.com/logout?post_logout_redirect_uri="
 	create_oc_mock "grafana.example.com" "true" "https://already-set" "$signout"
 	source "$LIB_DIR/grafana-url.sh"
 

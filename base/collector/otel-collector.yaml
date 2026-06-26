@@ -2,7 +2,7 @@
 # Hostnames injected via OTel ${env:VAR} substitution.
 #
 # Authentication:
-#   The webhookevent receiver requires a valid OIDC bearer token.
+#   The webhookevent and OTLP receivers require a valid OIDC bearer token.
 #   Browsing to the collector route in a browser returns
 #   "Authentication didn't succeed" — this is expected behavior.
 #   Clients must obtain a token from the OIDC provider and send it
@@ -36,8 +36,12 @@ receivers:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: oidc
       http:
         endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: oidc
 
 processors:
   batch:

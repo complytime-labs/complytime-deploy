@@ -4,9 +4,11 @@
 #   - Uses base images (to test a local image, see "Testing Local Images" in README)
 #   - Reduces resource limits for laptop
 #   - Changes PVC access mode to ReadWriteOnce (CRC hostpath)
-#   - Replaces collector config (removes auth, adds debug exporter)
+#   - Replaces collector config (OIDC auth on all receivers, debug exporter)
 #   - Skips Grafana→Loki TLS verification
 #   - Enables anonymous Grafana access (Admin role)
+#   - Deploys Keycloak OIDC provider (complytime realm with test clients)
+#   - Adds initContainer to collector to wait for Keycloak before starting
 #   - Adds Routes for local browser access
 #   - Adds RustFS for local S3 evidence export
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -18,6 +20,7 @@ resources:
   - ../../base
   - routes.yaml
   - rustfs/
+  - keycloak/
 
 patches:
   - path: patches/resources.yaml
@@ -26,9 +29,11 @@ patches:
   - path: patches/grafana-auth.yaml
   - path: patches/probes.yaml
   - path: patches/collector-env.yaml
+  - path: patches/collector-oidc-env.yaml
+  - path: patches/collector-init-keycloak.yaml
 
 configMapGenerator:
   - name: collector-config
     behavior: replace
     files:
-      - otel-collector.yaml=configs/collector-local.yaml
+      - otel-collector.yaml=configs/collector-oidc.yaml

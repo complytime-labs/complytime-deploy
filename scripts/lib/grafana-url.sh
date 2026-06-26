@@ -46,30 +46,30 @@ grafana_auto_derive_urls() {
 		needs_restart=true
 	fi
 
-	# Patch redirect_uri in GF_AUTH_SIGNOUT_REDIRECT_URL if needed
+	# Patch post_logout_redirect_uri in GF_AUTH_SIGNOUT_REDIRECT_URL if needed
 	if [[ -n "$current_signout_url" ]]; then
 		local encoded_root_url
 		encoded_root_url=$(jq -rn --arg v "$derived_root_url" '$v|@uri')
 		local patched_signout_url=""
 
-		if [[ "$current_signout_url" =~ redirect_uri=$ ]]; then
-			# redirect_uri= exists but value is empty (at end of string)
+		if [[ "$current_signout_url" =~ post_logout_redirect_uri=$ ]]; then
+			# post_logout_redirect_uri= exists but value is empty (at end of string)
 			patched_signout_url="${current_signout_url}${encoded_root_url}"
-		elif [[ "$current_signout_url" =~ redirect_uri=\& ]]; then
-			# redirect_uri= exists but value is empty (followed by &)
-			patched_signout_url="${current_signout_url/redirect_uri=&/redirect_uri=${encoded_root_url}\&}"
-		elif [[ "$current_signout_url" != *"redirect_uri="* ]]; then
-			# No redirect_uri parameter at all — append it
+		elif [[ "$current_signout_url" =~ post_logout_redirect_uri=\& ]]; then
+			# post_logout_redirect_uri= exists but value is empty (followed by &)
+			patched_signout_url="${current_signout_url/post_logout_redirect_uri=&/post_logout_redirect_uri=${encoded_root_url}\&}"
+		elif [[ "$current_signout_url" != *"post_logout_redirect_uri="* ]]; then
+			# No post_logout_redirect_uri parameter at all — append it
 			if [[ "$current_signout_url" == *"?"* ]]; then
-				patched_signout_url="${current_signout_url}&redirect_uri=${encoded_root_url}"
+				patched_signout_url="${current_signout_url}&post_logout_redirect_uri=${encoded_root_url}"
 			else
-				patched_signout_url="${current_signout_url}?redirect_uri=${encoded_root_url}"
+				patched_signout_url="${current_signout_url}?post_logout_redirect_uri=${encoded_root_url}"
 			fi
 		fi
-		# If redirect_uri already has a non-empty value, skip (CI variable wins)
+		# If post_logout_redirect_uri already has a non-empty value, skip (CI variable wins)
 
 		if [[ -n "$patched_signout_url" ]]; then
-			echo "Auto-filling redirect_uri in GF_AUTH_SIGNOUT_REDIRECT_URL..."
+			echo "Auto-filling post_logout_redirect_uri in GF_AUTH_SIGNOUT_REDIRECT_URL..."
 			local signout_json
 			signout_json=$(jq -n --arg v "$patched_signout_url" '$v')
 			oc patch configmap grafana-env -n "$NAMESPACE" --type=merge \

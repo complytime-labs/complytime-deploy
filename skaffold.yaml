@@ -8,6 +8,11 @@ manifests:
     paths: ["overlays/local"]
 
 deploy:
+  # The collector's initContainer waits for Keycloak before starting.
+  # Tolerate transient failures so Skaffold doesn't exit early while the
+  # init container is still polling.
+  statusCheckDeadlineSeconds: 300
+  tolerateFailuresUntilDeadline: true
   kubectl:
     hooks:
       before:

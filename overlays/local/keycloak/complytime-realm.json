@@ -85,6 +85,9 @@
         "https://localhost:3000/login/generic_oauth",
         "http://localhost:3000/login/generic_oauth"
       ],
+      "attributes": {
+        "post.logout.redirect.uris": "https://grafana.apps-crc.testing##https://localhost:3000##http://localhost:3000"
+      },
       "webOrigins": [
         "https://grafana.apps-crc.testing",
         "https://localhost:3000"

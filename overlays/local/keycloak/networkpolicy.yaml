@@ -1,0 +1,19 @@
+# Keycloak ingress — allows in-namespace pods only.
+# Port 8080 (HTTP) for OIDC discovery, token, and admin endpoints.
+# No Route exists for Keycloak; it is only accessed in-cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-keycloak-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080

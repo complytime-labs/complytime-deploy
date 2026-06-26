@@ -31,7 +31,7 @@ steps:
 
       # Step 2: Extract the form action URL from the HTML
       # Keycloak's login form has: <form ... action="https://...">
-      FORM_ACTION=$(echo "$LOGIN_PAGE" | grep -oP 'action="[^"]*"' | head -1 | sed 's/action="//;s/"$//' | sed 's/&amp;/\&/g')
+      FORM_ACTION=$(echo "$LOGIN_PAGE" | sed -n 's/.*action="\([^"]*\)".*/\1/p' | head -1 | sed 's/&amp;/\&/g')
       if [ -z "$FORM_ACTION" ]; then
         echo "RESULT=FAIL"
         echo "ERROR=Could not parse login form action URL"
@@ -63,7 +63,7 @@ steps:
         exit 0
       fi
 
-      AUTH_CODE=$(echo "$LOCATION" | grep -oP 'code=[^&]+' | sed 's/code=//')
+      AUTH_CODE=$(echo "$LOCATION" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')
       if [ -z "$AUTH_CODE" ]; then
         echo "RESULT=FAIL"
         echo "ERROR=No authorization code in redirect URL"

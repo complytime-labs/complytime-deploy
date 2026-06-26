@@ -197,15 +197,14 @@ AWS_SECRET_ACCESS_KEY=rustfsadmin
 ENVFILE
 echo "  Collector environment file generated"
 
-# --- Keycloak realm (OIDC mode only) ---
+# --- Keycloak realm ---
+# Always copy the realm config — the Keycloak container unit mounts it.
 
-if [[ "$OIDC_ENABLED" = true ]]; then
-	echo ""
-	echo "Copying Keycloak realm configuration..."
-	cp "$REPO_ROOT/overlays/local/keycloak/complytime-realm.json" \
-		"$RUNTIME_DIR/configs/complytime-realm.json"
-	echo "  Realm config copied"
-fi
+echo ""
+echo "Copying Keycloak realm configuration..."
+cp "$REPO_ROOT/overlays/local/keycloak/complytime-realm.json" \
+	"$RUNTIME_DIR/configs/complytime-realm.json"
+echo "  Realm config copied"
 
 # --- Install quadlet unit files ---
 

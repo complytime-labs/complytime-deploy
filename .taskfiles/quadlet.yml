@@ -37,7 +37,7 @@ tasks:
   status:
     desc: Show status of all ComplyTime quadlet services
     cmds:
-      - systemctl --user --no-pager status complytime-rustfs complytime-loki complytime-collector complytime-grafana 2>/dev/null || true
+      - systemctl --user --no-pager status complytime-rustfs complytime-loki complytime-keycloak complytime-collector complytime-grafana 2>/dev/null || true
 
   logs:
     desc: "Stream logs from a service (usage: task quadlet:logs -- collector)"

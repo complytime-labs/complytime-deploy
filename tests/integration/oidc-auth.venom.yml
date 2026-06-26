@@ -75,7 +75,7 @@ testcases:
         vars:
           valid_token:
             from: result.access_token
-      - type: post-evidence-auth
+      - type: post-evidence
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
@@ -88,7 +88,7 @@ testcases:
 
   - name: POST without token returns 401
     steps:
-      - type: post-evidence-auth
+      - type: post-evidence
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
@@ -101,7 +101,7 @@ testcases:
 
   - name: POST with garbage token returns 401
     steps:
-      - type: post-evidence-auth
+      - type: post-evidence
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
@@ -131,7 +131,7 @@ testcases:
           echo "DONE"
         assertions:
           - result.code ShouldEqual 0
-      - type: post-evidence-auth
+      - type: post-evidence
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"
@@ -154,7 +154,7 @@ testcases:
         vars:
           wrong_aud_token:
             from: result.access_token
-      - type: post-evidence-auth
+      - type: post-evidence
         collector_host: "{{.collector_host}}"
         webhook_port: "{{.webhook_port}}"
         ca_cert: "{{.ca_cert}}"

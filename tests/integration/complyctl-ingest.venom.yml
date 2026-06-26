@@ -1,0 +1,104 @@
+name: complyctl OTLP ingest end-to-end
+vars:
+  keycloak_host: "localhost"
+  keycloak_port: "8180"
+  loki_host: "loki.complytime-dev.svc"
+  loki_port: "3100"
+  ca_cert: ".test-output/service-ca.crt"
+  _secret_beacon: "beacon-test-secret" # checkov:skip=CKV_SECRET_6:test fixture for local Keycloak dev instance, not a real secret
+secrets:
+  - _secret_beacon
+
+testcases:
+  - name: complyctl scan exports evidence via OTLP to collector
+    steps:
+      # The ampel provider calls the GitHub API via snappy; a token is
+      # required or the scan will fail with an auth error.
+      - type: exec
+        script: |
+          if [ -z "${GITHUB_TOKEN:-}" ]; then
+            echo "GITHUB_TOKEN is not set — required for ampel provider GitHub API access"
+            exit 1
+          fi
+          echo "GITHUB_TOKEN is set"
+        assertions:
+          - result.code ShouldEqual 0
+
+      # Write a complytime.yaml with collector section to an isolated
+      # workspace under .test-output/ so we don't pollute the project root.
+      - type: exec
+        script: |
+          PROJECT_ROOT="{{.venom.testsuite.workdir}}/../.."
+          PROJECT_ROOT=$(cd "$PROJECT_ROOT" && pwd)
+          WORKSPACE="${PROJECT_ROOT}/.test-output/complytime"
+          mkdir -p "${WORKSPACE}/.complytime"
+          cat > "${WORKSPACE}/.complytime/complytime.yaml" <<EOF
+          policies:
+            - id: ampel-branch-protection
+              url: quay.io/complytime/policies-ampel-branch-protection@v0.1.0
+          complypacks:
+            - id: ampel-branch-protection
+              url: quay.io/complytime/complypack-ampel-branch-protection@v0.5.0
+          targets:
+            - id: local
+              policies:
+                - ampel-branch-protection
+              variables:
+                url: "https://github.com/complytime-labs/complytime-deploy"
+                specs: "builtin:github/branch-rules.yaml"
+          collector:
+            endpoint: "localhost:4317"
+            auth:
+              client-id: "beacon-test"
+              client-secret: "{{._secret_beacon}}"
+              token-endpoint: "http://{{.keycloak_host}}:{{.keycloak_port}}/realms/complytime/protocol/openid-connect/token"
+          EOF
+          sed -i 's/^          //' "${WORKSPACE}/.complytime/complytime.yaml"
+          echo "${WORKSPACE}"
+        assertions:
+          - result.code ShouldEqual 0
+        vars:
+          workspace:
+            from: result.systemout
+
+      # Fetch the policy and complypack from the OCI registry.
+      # The complypack contains granular AMPEL policy files that the
+      # generate phase merges into the policy bundle for scanning.
+      - type: exec
+        script: |
+          complyctl get \
+            --workspace "{{.workspace}}" \
+            2>&1
+        assertions:
+          - result.code ShouldEqual 0
+
+      # Run complyctl scan with export enabled.
+      # OTEL_EXPORTER_OTLP_INSECURE=true is required because the collector's
+      # gRPC receiver (port 4317) does not use TLS, but the OTel SDK's
+      # otlploggrpc exporter defaults to TLS-enabled connections.
+      - type: exec
+        script: |
+          COMPLYTIME_EXPORT_ENABLED=true \
+          OTEL_EXPORTER_OTLP_INSECURE=true \
+            complyctl scan local \
+              --workspace "{{.workspace}}" \
+              --format sarif \
+              2>&1
+          echo "EXIT_CODE=$?"
+        assertions:
+          - result.systemout ShouldContainSubstring EXIT_CODE=0
+        vars:
+          scan_output:
+            from: result.systemout
+
+      # Poll Loki for evidence from the scan.
+      # complyctl uses the OTel SDK default service name ("unknown_service:complyctl")
+      # unless OTEL_SERVICE_NAME is set. Use a regex to match either.
+      - type: poll-loki
+        query: '{service_name=~".*complyctl.*"}'
+        loki_host: "{{.loki_host}}"
+        loki_port: "{{.loki_port}}"
+        ca_cert: "{{.ca_cert}}"
+        timeout: "60"
+        assertions:
+          - result.log_line ShouldNotBeEmpty

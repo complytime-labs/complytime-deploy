@@ -10,7 +10,10 @@ vars:
   CHECKOV_VERSION: "3.3.1"
   TRIVY_VERSION: "0.71.1"
   YQ_VERSION: "v4.53.3"
-  COMPLYCTL_VERSION: "v1.0.0-alpha.0"
+  COMPLYCTL_VERSION: "v1.0.0-beta.0"
+  SNAPPY_VERSION: "v0.2.4"
+  AMPEL_VERSION: "v1.3.1"
+  AMPEL_PROVIDER_VERSION: "v0.1.0"
   VENOM_VERSION: "v1.3.0"
   KUBESEAL_VERSION: "v0.37.0"
 
@@ -26,13 +29,13 @@ tasks:
       - sh: '[ -n "{{.CLI_ARGS}}" ]'
         msg: |
           Usage: task tools:install -- <tool> [tool...]
-          Available tools: task oc kustomize skaffold checkov trivy yq complyctl venom kubeseal
+          Available tools: task oc kustomize skaffold checkov trivy yq complyctl ampel-provider snappy ampel venom kubeseal
     cmds:
       - for: { var: CLI_ARGS, split: " " }
         cmd: |
           case "{{.ITEM}}" in
-            task|oc|kustomize|skaffold|checkov|trivy|yq|complyctl|venom|kubeseal) ;;
-            *) echo "Unknown tool: {{.ITEM}}"; echo "Available: task oc kustomize skaffold checkov trivy yq complyctl venom kubeseal"; exit 1 ;;
+            task|oc|kustomize|skaffold|checkov|trivy|yq|complyctl|ampel-provider|snappy|ampel|venom|kubeseal) ;;
+            *) echo "Unknown tool: {{.ITEM}}"; echo "Available: task oc kustomize skaffold checkov trivy yq complyctl ampel-provider snappy ampel venom kubeseal"; exit 1 ;;
           esac
       - for: { var: CLI_ARGS, split: " " }
         task: _install-{{.ITEM}}
@@ -40,21 +43,35 @@ tasks:
   install-deploy:
     desc: "Install all deployment tools (oc, kustomize, skaffold, kubeseal, yq)"
     cmds:
+      - echo "==> Checking oc..."
       - task: _install-oc
+      - echo "==> Checking kustomize..."
       - task: _install-kustomize
+      - echo "==> Checking skaffold..."
       - task: _install-skaffold
+      - echo "==> Checking kubeseal..."
       - task: _install-kubeseal
+      - echo "==> Checking yq..."
       - task: _install-yq
+      - echo "==> Deployment tools ready."
 
   install-scan:
-    desc: "Install all scanning tools (checkov, trivy)"
+    desc: "Install all scanning tools (checkov, trivy, snappy, ampel)"
     cmds:
+      - echo "==> Checking checkov..."
       - task: _install-checkov
+      - echo "==> Checking trivy..."
       - task: _install-trivy
+      - echo "==> Checking snappy..."
+      - task: _install-snappy
+      - echo "==> Checking ampel..."
+      - task: _install-ampel
+      - echo "==> Scanning tools ready."
 
   _install-task:
     status:
       - command -v task
+      - task --version 2>&1 | grep -q "{{.TASK_VERSION}}"
     cmds:
       - mkdir -p "{{.TOOLS_DIR}}"
       - curl -fsSL -o /tmp/task.tar.gz
@@ -88,6 +105,7 @@ tasks:
   _install-kustomize:
     status:
       - command -v kustomize
+      - kustomize version 2>&1 | grep -q "{{.KUSTOMIZE_VERSION}}"
     cmds:
       - mkdir -p "{{.TOOLS_DIR}}"
       - curl -fsSL -o /tmp/kustomize.tar.gz
@@ -103,6 +121,7 @@ tasks:
   _install-skaffold:
     status:
       - command -v skaffold
+      - skaffold version 2>&1 | grep -q "{{.SKAFFOLD_VERSION}}"
     cmds:
       - mkdir -p "{{.TOOLS_DIR}}"
       - curl -fsSL -o /tmp/skaffold
@@ -117,6 +136,7 @@ tasks:
   _install-checkov:
     status:
       - command -v checkov
+      - checkov --version 2>&1 | grep -q "{{.CHECKOV_VERSION}}"
     cmds:
       - pip download -q --no-deps -d /tmp "checkov=={{.CHECKOV_VERSION}}"
       - |
@@ -129,6 +149,7 @@ tasks:
   _install-trivy:
     status:
       - command -v trivy
+      - trivy --version 2>&1 | grep -q "{{.TRIVY_VERSION}}"
     cmds:
       - mkdir -p "{{.TOOLS_DIR}}"
       - curl -fsSL -o /tmp/trivy.tar.gz
@@ -144,6 +165,7 @@ tasks:
   _install-yq:
     status:
       - command -v yq
+      - yq --version 2>&1 | grep -q "{{.YQ_VERSION}}"
     cmds:
       - mkdir -p "{{.TOOLS_DIR}}"
       - curl -fsSL -o /tmp/yq
@@ -158,6 +180,7 @@ tasks:
   _install-complyctl:
     status:
       - command -v complyctl
+      - complyctl version 2>&1 | grep -q "{{.COMPLYCTL_VERSION}}"
     cmds:
       - mkdir -p "{{.TOOLS_DIR}}"
       - curl -fsSL -o /tmp/complyctl.tar.gz
@@ -170,9 +193,55 @@ tasks:
       - rm -rf /tmp/complyctl.tar.gz /tmp/complyctl /tmp/LICENSE /tmp/README.md /tmp/openscap-plugin
       - complyctl version
 
+  _install-ampel-provider:
+    internal: true
+    status:
+      - test -x "{{.HOME}}/.complytime/providers/complyctl-provider-ampel"
+    cmds:
+      - mkdir -p "{{.HOME}}/.complytime/providers"
+      - curl -fsSL -o /tmp/ampel-provider.tar.gz
+        "https://github.com/complytime/complytime-providers/releases/download/{{.AMPEL_PROVIDER_VERSION}}/complyctl-provider-ampel_linux_x86_64.tar.gz"
+      - |
+        EXPECTED=$(grep "complytime-providers/{{.AMPEL_PROVIDER_VERSION}}/linux/x86_64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/ampel-provider.tar.gz" | sha256sum -c -
+      - tar -xzf /tmp/ampel-provider.tar.gz -C /tmp
+      - install /tmp/complyctl-provider-ampel "{{.HOME}}/.complytime/providers/complyctl-provider-ampel"
+      - rm -rf /tmp/ampel-provider.tar.gz /tmp/complyctl-provider-ampel /tmp/LICENSE /tmp/README.md /tmp/CHANGELOG.md
+
+  _install-snappy:
+    status:
+      - command -v snappy
+      - snappy version 2>&1 | grep -q "{{.SNAPPY_VERSION}}"
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fsSL -o /tmp/snappy
+        "https://github.com/carabiner-dev/snappy/releases/download/{{.SNAPPY_VERSION}}/snappy-{{.SNAPPY_VERSION}}-linux-amd64"
+      - |
+        EXPECTED=$(grep "snappy/{{.SNAPPY_VERSION}}/linux/amd64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/snappy" | sha256sum -c -
+      - install /tmp/snappy "{{.TOOLS_DIR}}/snappy"
+      - rm -f /tmp/snappy
+      - snappy version
+
+  _install-ampel:
+    status:
+      - command -v ampel
+      - ampel version 2>&1 | grep -q "{{.AMPEL_VERSION}}"
+    cmds:
+      - mkdir -p "{{.TOOLS_DIR}}"
+      - curl -fsSL -o /tmp/ampel
+        "https://github.com/carabiner-dev/ampel/releases/download/{{.AMPEL_VERSION}}/ampel-{{.AMPEL_VERSION}}-linux-amd64"
+      - |
+        EXPECTED=$(grep "ampel-cli/{{.AMPEL_VERSION}}/linux/amd64" "{{.CHECKSUMS_FILE}}" | cut -d: -f2 | tr -d ' ')
+        echo "${EXPECTED}  /tmp/ampel" | sha256sum -c -
+      - install /tmp/ampel "{{.TOOLS_DIR}}/ampel"
+      - rm -f /tmp/ampel
+      - ampel version
+
   _install-venom:
     status:
       - command -v venom
+      - venom version 2>&1 | grep -q "{{.VENOM_VERSION}}"
     cmds:
       - mkdir -p "{{.TOOLS_DIR}}"
       - curl -fsSL -o /tmp/venom.linux-amd64
@@ -187,6 +256,7 @@ tasks:
   _install-kubeseal:
     status:
       - command -v kubeseal
+      - kubeseal --version 2>&1 | grep -q "{{.KUBESEAL_VERSION}}"
     cmds:
       - mkdir -p "{{.TOOLS_DIR}}"
       - curl -fsSL -o /tmp/kubeseal.tar.gz

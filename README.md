@@ -18,6 +18,7 @@ The system consists of:
 - **Loki**: Log aggregation — stores compliance evaluation logs with indexed attributes for querying
 - **Grafana**: Dashboard UI — visualizes compliance data from Loki (ships with a default compliance overview dashboard)
 - **RustFS**: S3-compatible object storage (local only) — stores compliance evidence for local development
+- **Keycloak**: OIDC identity provider (local only) — provides auth tokens for collector and Grafana testing
 
 ## Architecture
 
@@ -44,11 +45,13 @@ flowchart TD
   collector["Collector"]
   loki["Loki"]
   grafana["Grafana"]
+  keycloak["Keycloak (local only)"]
 
-  clients -->|webhook / OTLP| collector
+  clients -->|"webhook / OTLP (OIDC)"| collector
   browser -->|HTTPS| grafana
   collector -->|OTLP / HTTPS| loki
   grafana -->|queries logs| loki
+  collector -.->|validates tokens| keycloak
 
   subgraph evidence["Evidence storage (one per environment)"]
     s3prod["AWS S3 (stage/production)"]
@@ -61,14 +64,16 @@ flowchart TD
   classDef sysB fill:#1d7848,color:#ffffff,stroke:#7c8ba1
   classDef sysC fill:#7457b8,color:#ffffff,stroke:#7c8ba1
   classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
+  classDef sysE fill:#4d68c4,color:#ffffff,stroke:#7c8ba1
   class clients,browser sysD
   class collector sysA
   class loki sysB
   class grafana sysC
   class s3prod,s3local sysD
+  class keycloak sysE
 ```
 
-**Data flow:** External clients send compliance data to Collector via webhook (OIDC-authenticated) or OTLP. Collector transforms them to OCSF format, generates metrics, and exports to Loki (for querying) and S3 (for evidence storage). Grafana queries Loki for dashboard visualization.
+**Data flow:** External clients send compliance data to Collector via webhook or OTLP (both OIDC-authenticated). Collector transforms them to OCSF format, generates metrics, and exports to Loki (for querying) and S3 (for evidence storage). Grafana queries Loki for dashboard visualization.
 
 ## Prerequisites
 
@@ -152,22 +157,22 @@ The following variable groups are each gated on a single key. If the gate variab
 
 *Grafana OIDC* -- gated on `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`. When absent, OIDC is disabled and Grafana uses local auth.
 
-| Variable                              | Environment Scope | Type     | Protected | Masked | Purpose                                                           |
-|---------------------------------------|-------------------|----------|-----------|--------|-------------------------------------------------------------------|
-| `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`     | `stage`           | Variable | Yes       | No     | Grafana OIDC client ID                                            |
-| `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`     | `production`      | Variable | Yes       | No     | Grafana OIDC client ID                                            |
-| `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` | `stage`           | Variable | Yes       | Yes    | Grafana OIDC client secret                                        |
-| `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` | `production`      | Variable | Yes       | Yes    | Grafana OIDC client secret                                        |
-| `GF_AUTH_GENERIC_OAUTH_AUTH_URL`      | `stage`           | Variable | Yes       | No     | OIDC authorization URL                                            |
-| `GF_AUTH_GENERIC_OAUTH_AUTH_URL`      | `production`      | Variable | Yes       | No     | OIDC authorization URL                                            |
-| `GF_AUTH_GENERIC_OAUTH_TOKEN_URL`     | `stage`           | Variable | Yes       | No     | OIDC token URL                                                    |
-| `GF_AUTH_GENERIC_OAUTH_TOKEN_URL`     | `production`      | Variable | Yes       | No     | OIDC token URL                                                    |
-| `GF_AUTH_GENERIC_OAUTH_API_URL`       | `stage`           | Variable | Yes       | No     | OIDC userinfo URL                                                 |
-| `GF_AUTH_GENERIC_OAUTH_API_URL`       | `production`      | Variable | Yes       | No     | OIDC userinfo URL                                                 |
-| `GF_AUTH_SIGNOUT_REDIRECT_URL`        | `stage`           | Variable | Yes       | No     | Post-signout redirect URL (`redirect_uri` auto-filled from Route) |
-| `GF_AUTH_SIGNOUT_REDIRECT_URL`        | `production`      | Variable | Yes       | No     | Post-signout redirect URL (`redirect_uri` auto-filled from Route) |
-| `GF_SERVER_ROOT_URL`                  | `stage`           | Variable | Yes       | No     | Grafana public root URL (auto-derived from Route if not set)      |
-| `GF_SERVER_ROOT_URL`                  | `production`      | Variable | Yes       | No     | Grafana public root URL (auto-derived from Route if not set)      |
+| Variable                              | Environment Scope | Type     | Protected | Masked | Purpose                                                                       |
+|---------------------------------------|-------------------|----------|-----------|--------|-------------------------------------------------------------------------------|
+| `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`     | `stage`           | Variable | Yes       | No     | Grafana OIDC client ID                                                        |
+| `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`     | `production`      | Variable | Yes       | No     | Grafana OIDC client ID                                                        |
+| `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` | `stage`           | Variable | Yes       | Yes    | Grafana OIDC client secret                                                    |
+| `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` | `production`      | Variable | Yes       | Yes    | Grafana OIDC client secret                                                    |
+| `GF_AUTH_GENERIC_OAUTH_AUTH_URL`      | `stage`           | Variable | Yes       | No     | OIDC authorization URL                                                        |
+| `GF_AUTH_GENERIC_OAUTH_AUTH_URL`      | `production`      | Variable | Yes       | No     | OIDC authorization URL                                                        |
+| `GF_AUTH_GENERIC_OAUTH_TOKEN_URL`     | `stage`           | Variable | Yes       | No     | OIDC token URL                                                                |
+| `GF_AUTH_GENERIC_OAUTH_TOKEN_URL`     | `production`      | Variable | Yes       | No     | OIDC token URL                                                                |
+| `GF_AUTH_GENERIC_OAUTH_API_URL`       | `stage`           | Variable | Yes       | No     | OIDC userinfo URL                                                             |
+| `GF_AUTH_GENERIC_OAUTH_API_URL`       | `production`      | Variable | Yes       | No     | OIDC userinfo URL                                                             |
+| `GF_AUTH_SIGNOUT_REDIRECT_URL`        | `stage`           | Variable | Yes       | No     | Post-signout redirect URL (`post_logout_redirect_uri` auto-filled from Route) |
+| `GF_AUTH_SIGNOUT_REDIRECT_URL`        | `production`      | Variable | Yes       | No     | Post-signout redirect URL (`post_logout_redirect_uri` auto-filled from Route) |
+| `GF_SERVER_ROOT_URL`                  | `stage`           | Variable | Yes       | No     | Grafana public root URL (auto-derived from Route if not set)                  |
+| `GF_SERVER_ROOT_URL`                  | `production`      | Variable | Yes       | No     | Grafana public root URL (auto-derived from Route if not set)                  |
 
 *AppCode labeling* -- set via Taskfile variable `APPCODE` (default: `COMPLYTIME`). The `sk:run`, `sk:render`, and `sk:render-all` tasks inject this as a `paas.redhat.com/appcode` label and `AppCode` annotation on all generated resources. Override at deploy time or set as a CI/CD variable to propagate through `task sk:run`:
 
@@ -242,7 +247,7 @@ On the first deploy to a new cluster, certain Grafana configuration values depen
 1. **Routes are created** during `kustomize` deploy — hostnames are auto-assigned
 2. **Post-deploy detects empty values** in the `grafana-env` ConfigMap:
    - `GF_SERVER_ROOT_URL` — set to `https://<grafana-route-host>`
-   - `GF_AUTH_SIGNOUT_REDIRECT_URL` — if the SSO logout base URL is set but `redirect_uri=` is missing or empty, it is filled with the URL-encoded Grafana root URL
+   - `GF_AUTH_SIGNOUT_REDIRECT_URL` — if the SSO logout base URL is set but `post_logout_redirect_uri=` is missing or empty, it is filled with the URL-encoded Grafana root URL
 3. **Grafana is restarted** to pick up the patched ConfigMap values
 
 Subsequent deploys skip this step if CI variables are already set. Setting `GF_SERVER_ROOT_URL` as a CI variable after first deploy is recommended for stability but not required.
@@ -256,7 +261,8 @@ The Collector config uses OTel `${env:VAR}` substitution. These environment vari
 | `OIDC_ISSUER_URL` | OIDC provider for webhook authentication | `""` (empty — set via [GitLab CI variable](#gitlab-ci-secret-management)) |
 | `AWS_REGION`      | AWS region for S3 export                 | `""` (empty — overlay must provide)                                       |
 | `S3_BUCKETNAME`   | S3 bucket for evidence storage           | `""` (empty — overlay must provide)                                       |
-| `S3_OBJ_DIR`      | S3 key prefix for evidence files         | `""` (empty — overlay must provide)                                       |
+| `S3_OBJ_DIR`  | S3 key prefix for evidence files         | `""` (empty — overlay must provide)                                       |
+| `S3_ENDPOINT`  | Custom S3 endpoint URL (for RustFS or non-AWS S3) | `""` (empty — AWS default; overlay provides for local/custom)             |
 
 ## Quick Start — OpenShift Local (CRC)
 
@@ -295,7 +301,7 @@ OpenShift Local (CRC) runs a single-node OpenShift cluster on your laptop.
 5. **Access services:**
    - Collector: <https://collector.apps-crc.testing>
    - Grafana: <https://grafana.apps-crc.testing> (anonymous access, no login)
-   - RustFS console: <http://localhost:9000> (rustfsadmin/rustfsadmin)
+   - RustFS console: <http://localhost:9001> (rustfsadmin/rustfsadmin)
 
    Browser will show a self-signed certificate warning — this is expected.
 
@@ -339,7 +345,7 @@ Each environment has an overlay directory (`overlays/<env>/`) that customizes th
 
 | Overlay      | Namespace          | Auth                            | Debug    | Secrets                         |
 |--------------|--------------------|---------------------------------|----------|---------------------------------|
-| `local`      | `complytime-dev`   | Disabled (anonymous/no JWT)     | Enabled  | Auto-created by deploy script   |
+| `local`      | `complytime-dev`   | OIDC on collector (Keycloak), anonymous Grafana | Enabled  | Auto-created by deploy script   |
 | `stage`      | `complytime-stage` | OIDC auto-login (no login form) | Enabled  | GitLab CI vars or SealedSecrets |
 | `production` | `complytime-prod`  | OIDC auto-login (no login form) | Disabled | GitLab CI vars or SealedSecrets |
 
@@ -417,6 +423,21 @@ task sk:run -- production
 
 Skaffold handles login, namespace creation, SealedSecrets application, manifest deployment, Route TLS cert injection, and Grafana datasource CA cert injection via deploy hooks.
 
+### Switching OIDC Providers
+
+ComplyTime uses Keycloak (Red Hat SSO) as its OIDC provider. If you switch to a different provider, review the following Keycloak-specific settings in the stage/production overlay patches:
+
+| Setting                                      | Current value                               | What to check                                                                                                          |
+|----------------------------------------------|---------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
+| `GF_AUTH_GENERIC_OAUTH_SCOPES`               | `openid email profile offline_access roles` | Your provider's supported scopes — `offline_access` and `roles` are Keycloak conventions                               |
+| `GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH`  | JMESPath checking `roles[*]`                | Where your provider puts role claims in the ID token                                                                   |
+| `GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH` | `email`                                     | Claim name for user email                                                                                              |
+| `GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH` | `username`                                  | Claim name for login identifier                                                                                        |
+| `GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH`  | `full_name`                                 | Claim name for display name                                                                                            |
+| `GF_AUTH_SIGNOUT_REDIRECT_URL`               | `...logout?post_logout_redirect_uri=`       | OIDC RP-Initiated Logout parameter name — standard is `post_logout_redirect_uri` but some providers use `redirect_uri` |
+
+The signout redirect URL auto-fill logic in `scripts/lib/grafana-url.sh` uses `post_logout_redirect_uri`. If your provider requires a different parameter name, update the script.
+
 ### Podman Quadlet (No OpenShift Required)
 
 Run ComplyTime locally using rootless Podman with systemctl --user. No OpenShift or CRC needed — just Podman 4.4+ on Linux.
@@ -437,7 +458,8 @@ task quadlet:logs -- collector
 
 # Access services
 #   Grafana:   https://localhost:3000 (or http:// with --no-tls)
-#   Collector: https://localhost:4318
+#   Collector: https://localhost:4318 (OTLP HTTP)
+#   Collector: localhost:4317        (OTLP gRPC)
 #   RustFS:    http://localhost:9001 (rustfsadmin/rustfsadmin)
 
 # Full cleanup
@@ -585,7 +607,7 @@ task quadlet:status           # Show service status
 task quadlet:logs -- collector  # Stream logs via journalctl
 task quadlet:teardown         # Full cleanup
 
-# Integration Tests
+# Integration Tests (GITHUB_TOKEN required for complyctl ingest tests)
 task integration:test                    # Run all tests (CRC mode)
 task integration:test MODE=quadlet       # Run all tests (Quadlet mode)
 task integration:test NAMESPACE=foo      # Run tests in custom namespace (CRC only)
@@ -744,7 +766,7 @@ rootless Podman without a cluster, but quadlets were chosen for several reasons:
 
 The tradeoff is that quadlet unit files don't share YAML with the Kustomize base, so the
 two deployment paths maintain separate configuration. This is acceptable because the
-quadlet surface is small (4 containers, 3 volumes, 1 network) and the configs it references
+quadlet surface is small (5 containers, 3 volumes, 1 network) and the configs it references
 (OTel collector, Loki, Grafana datasources) are sourced from the same base files at setup
 time.
 

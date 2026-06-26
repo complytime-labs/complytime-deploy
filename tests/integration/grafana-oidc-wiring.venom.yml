@@ -303,7 +303,7 @@ testcases:
           fi
 
           # Step 2: Parse the Keycloak login form action URL
-          FORM_ACTION=$(echo "$LOGIN_PAGE" | grep -oP 'action="[^"]*"' | head -1 | sed 's/action="//;s/"$//' | sed 's/&amp;/\&/g')
+          FORM_ACTION=$(echo "$LOGIN_PAGE" | sed -n 's/.*action="\([^"]*\)".*/\1/p' | head -1 | sed 's/&amp;/\&/g')
           if [ -z "$FORM_ACTION" ]; then
             echo "RESULT=FAIL"
             echo "STAGE=form_parse"
@@ -341,7 +341,7 @@ testcases:
           # Grafana exchanges the code for tokens and sets a session cookie
           GRAFANA_RESPONSE=$(curl -s -k -c "$GF_COOKIES" -b "$GF_COOKIES" -L \
             -w '\n%{http_code}' \
-            "$CALLBACK_URL" 2>/dev/null) || GRAFANA_RESPONSE=$'\n000'
+            "$CALLBACK_URL" 2>/dev/null) || GRAFANA_RESPONSE=$(printf '\n000')
           FINAL_CODE=$(echo "$GRAFANA_RESPONSE" | tail -1)
 
           # Check we got a Grafana session cookie
@@ -375,3 +375,34 @@ testcases:
           - result.systemout ShouldContainSubstring "RESULT=OK"
           - result.systemout ShouldContainSubstring "SESSION_PRESENT=true"
           - result.systemout ShouldContainSubstring "ORG_NAME="
+
+  # -- Positive: Grafana logout redirects via Keycloak with post_logout_redirect_uri --
+
+  - name: Grafana logout redirects to Keycloak OIDC logout with post_logout_redirect_uri
+    steps:
+      - type: exec
+        script: |
+          # Grafana's signout endpoint should redirect to the SSO logout URL.
+          # The Location header must contain the Keycloak OIDC logout endpoint
+          # with a post_logout_redirect_uri parameter.
+          HEADERS=$(mktemp)
+          trap "rm -f $HEADERS" EXIT
+          HTTP_CODE=$(curl -s -k -o /dev/null -w '%{http_code}' -D "$HEADERS" \
+            --max-redirs 0 \
+            "https://{{.grafana_host}}:{{.grafana_port}}/logout" \
+            2>/dev/null) || HTTP_CODE="000"
+          LOCATION=$(grep -i '^location:' "$HEADERS" | tr -d '\r' | sed 's/^[Ll]ocation: *//')
+          rm -f "$HEADERS"
+          echo "HTTP_STATUS=${HTTP_CODE}"
+          echo "REDIRECT=${LOCATION}"
+          # Check for the OIDC RP-Initiated Logout parameter
+          if echo "$LOCATION" | grep -q 'post_logout_redirect_uri'; then
+            echo "HAS_POST_LOGOUT_PARAM=true"
+          else
+            echo "HAS_POST_LOGOUT_PARAM=false"
+          fi
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "HTTP_STATUS=302"
+          - result.systemout ShouldMatchRegex "REDIRECT=.*openid-connect/logout"
+          - result.systemout ShouldContainSubstring "HAS_POST_LOGOUT_PARAM=true"

@@ -1,0 +1,55 @@
+executor: post-otlp-auth
+input:
+  otlp_host: "localhost"
+  otlp_port: "4318"
+  token: ""
+
+steps:
+  - type: exec
+    script: |
+      TIMESTAMP=$(date +%s)000000000
+      cat > /tmp/otlp_payload.json <<PAYLOAD
+      {
+        "resourceLogs": [{
+          "resource": {
+            "attributes": [
+              {"key": "service.name", "value": {"stringValue": "otlp-auth-test"}}
+            ]
+          },
+          "scopeLogs": [{
+            "scope": {"name": "otlp-auth-test"},
+            "logRecords": [{
+              "timeUnixNano": "${TIMESTAMP}",
+              "body": {"stringValue": "OTLP auth boundary test"},
+              "attributes": [
+                {"key": "test.id", "value": {"stringValue": "otlp-oidc"}}
+              ]
+            }]
+          }]
+        }]
+      }
+      PAYLOAD
+
+      AUTH_HEADER=""
+      if [ -n "{{.input.token}}" ]; then
+        AUTH_HEADER="Authorization: Bearer {{.input.token}}"
+      fi
+      HTTP_CODE=$(curl -s -o /tmp/otlp_response.txt -w '%{http_code}' \
+        -X POST \
+        -H "Content-Type: application/json" \
+        ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+        -d @/tmp/otlp_payload.json \
+        "http://{{.input.otlp_host}}:{{.input.otlp_port}}/v1/logs" \
+        2>/tmp/otlp_err.txt) || HTTP_CODE="000"
+
+      echo "HTTP_STATUS=${HTTP_CODE}"
+      rm -f /tmp/otlp_payload.json /tmp/otlp_response.txt /tmp/otlp_err.txt
+    assertions:
+      - result.code ShouldEqual 0
+    vars:
+      http_status:
+        from: result.systemout
+        regex: "HTTP_STATUS=(\\d+)"
+
+output:
+  status_code: "{{.http_status}}"

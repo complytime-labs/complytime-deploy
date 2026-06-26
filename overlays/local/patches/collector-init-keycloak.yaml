@@ -1,0 +1,43 @@
+# initContainer that blocks the collector from starting until Keycloak's
+# OIDC discovery endpoint is reachable.  The collector's OIDC extension
+# fails hard at startup if the issuer URL is unreachable (no retry), so
+# this prevents crash-loops when both are deployed simultaneously.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: wait-for-keycloak
+          image: docker.io/curlimages/curl:8.12.1
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Waiting for Keycloak OIDC discovery endpoint..."
+              attempt=0
+              until curl -sf http://keycloak:8080/realms/complytime/.well-known/openid-configuration > /dev/null; do
+                attempt=$((attempt + 1))
+                if [ $((attempt % 5)) -eq 0 ]; then
+                  echo "Attempt $attempt — last curl exit code: $?"
+                  echo "  DNS check: $(nslookup keycloak 2>&1 | head -4)"
+                  echo "  Connectivity: $(curl -sv http://keycloak:8080/ 2>&1 | head -5)"
+                fi
+                sleep 2
+              done
+              echo "Keycloak is ready (after $attempt attempts)."
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "50m"
+            limits:
+              memory: "32Mi"
+              cpu: "100m"
