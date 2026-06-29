@@ -375,30 +375,13 @@ tasks:
           elif [ -n "{{.CLI_ARGS}}" ]; then
             task sk:_resolve-namespace -- "{{.CLI_ARGS}}"
           fi
-    prompt: "{{if .RESOLVED_NS}}This will DELETE resources in namespace {{.RESOLVED_NS}} on {{.OC_SERVER}} and remove overlays/custom-{{.RESOLVED_NS}}/. Continue?{{else}}This will DELETE resources in namespace {{.DEFAULT_NAMESPACE}} on {{.OC_SERVER}}. Continue?{{end}}"
+    prompt: "{{if .RESOLVED_NS}}This will DELETE Skaffold-managed resources in namespace {{.RESOLVED_NS}} on {{.OC_SERVER}}. Continue?{{else}}This will DELETE Skaffold-managed resources in namespace {{.DEFAULT_NAMESPACE}} on {{.OC_SERVER}}. Continue?{{end}}"
     cmds:
       - |
+        source "{{.ROOT_DIR}}/scripts/lib/teardown.sh"
         if [ -n "{{.RESOLVED_NS}}" ]; then
-          OVERLAY_DIR="{{.ROOT_DIR}}/overlays/custom-{{.RESOLVED_NS}}"
-          if [ ! -d "$OVERLAY_DIR" ]; then
-            echo "ERROR: Custom overlay not found at $OVERLAY_DIR"
-            echo "  Nothing to delete — was this namespace deployed with sk:run NAMESPACE={{.RESOLVED_NS}}?"
-            exit 1
-          fi
-          oc project "{{.RESOLVED_NS}}" >/dev/null
-          skaffold delete --namespace="{{.RESOLVED_NS}}" -f "overlays/custom-{{.RESOLVED_NS}}/skaffold.yaml"
-          oc delete pvc --all -n "{{.RESOLVED_NS}}" --wait=false 2>/dev/null || true
-          rm -rf "$OVERLAY_DIR"
-          echo "Removed generated overlay at overlays/custom-{{.RESOLVED_NS}}/"
+          NAMESPACE="{{.RESOLVED_NS}}" teardown_namespace \
+            "{{.ROOT_DIR}}/overlays/custom-{{.RESOLVED_NS}}"
         else
-          oc project "{{.DEFAULT_NAMESPACE}}" >/dev/null
-          skaffold delete --namespace="{{.DEFAULT_NAMESPACE}}"
-          PVCS=$(oc get pvc -n "{{.DEFAULT_NAMESPACE}}" -o name 2>/dev/null)
-          if [ -n "$PVCS" ]; then
-            echo "Deleting PVCs to reclaim disk..."
-            oc delete pvc --all -n "{{.DEFAULT_NAMESPACE}}" --wait=false
-            echo "PVCs deleted"
-          else
-            echo "No PVCs to clean up"
-          fi
+          NAMESPACE="{{.DEFAULT_NAMESPACE}}" teardown_namespace
         fi
