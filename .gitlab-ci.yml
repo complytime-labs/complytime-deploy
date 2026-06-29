@@ -61,7 +61,6 @@ validate-production:
     - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
       when: on_success
   script:
-    - oc login --token="$OPENSHIFT_TOKEN" --server="$OPENSHIFT_SERVER"
     - |
       if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
         NS="$DEPLOY_NAMESPACE"
@@ -91,13 +90,17 @@ validate-server-production:
 
 # --- Lifecycle: manual ops jobs (independent of deploy) ---
 
-# Show pod status for the target environment.
+# Show pod status and health checks for the target environment.
+# Exits non-zero (DEGRADED) if any deployment, route, or health endpoint
+# is unhealthy. allow_failure lets the pipeline surface the result without
+# blocking other jobs.
 status-stage:
   <<: *deploy-template
   stage: lifecycle
   rules:
     - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
       when: manual
+      allow_failure: true
   needs:
     - validate-server-stage
   environment:
@@ -116,6 +119,7 @@ status-production:
   rules:
     - if: $OPENSHIFT_SERVER && $OPENSHIFT_TOKEN
       when: manual
+      allow_failure: true
   needs:
     - validate-server-production
   environment:
@@ -202,7 +206,7 @@ render-production:
         task sk:render -- production
       fi
 
-# Delete all deployed resources, PVCs, and generated overlays. Destructive.
+# Tear down Skaffold-managed resources and PVCs by label discovery. Destructive.
 teardown-stage:
   <<: *deploy-template
   stage: lifecycle
@@ -213,6 +217,7 @@ teardown-stage:
     - validate-server-stage
   environment:
     name: $CI_ENV_STAGE
+    action: stop
   script:
     - |
       if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
@@ -220,11 +225,6 @@ teardown-stage:
       else
         task sk:delete --yes -- stage
       fi
-  artifacts:
-    paths:
-      - overlays/custom-*
-    expire_in: 7 days
-    when: always
 
 teardown-production:
   <<: *deploy-template
@@ -236,6 +236,7 @@ teardown-production:
     - validate-server-production
   environment:
     name: $CI_ENV_PRODUCTION
+    action: stop
   script:
     - |
       if [ -n "${DEPLOY_NAMESPACE:-}" ]; then
@@ -243,11 +244,6 @@ teardown-production:
       else
         task sk:delete --yes -- production
       fi
-  artifacts:
-    paths:
-      - overlays/custom-*
-    expire_in: 7 days
-    when: always
 
 # --- Deploy: manual deployment jobs ---
 

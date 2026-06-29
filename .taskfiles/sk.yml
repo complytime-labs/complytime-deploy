@@ -319,7 +319,7 @@ tasks:
         echo "Lint sync check passed — all ConfigMap/Secret references match apply-sealed-secrets.sh"
 
   status:
-    desc: "Show pod status (usage: task sk:status, task sk:status -- stage, or task sk:status NAMESPACE=foo)"
+    desc: "Show pod status and health checks (usage: task sk:status, task sk:status -- stage, or task sk:status NAMESPACE=foo)"
     vars:
       RESOLVED_NS:
         sh: |
@@ -328,11 +328,15 @@ tasks:
           elif [ -n "{{.CLI_ARGS}}" ]; then
             task sk:_resolve-namespace -- "{{.CLI_ARGS}}"
           fi
+      TARGET_NS: "{{.RESOLVED_NS | default .DEFAULT_NAMESPACE}}"
     preconditions:
       - sh: '[ -z "{{.NAMESPACE}}" ] || [ -z "{{.CLI_ARGS}}" ]'
         msg: "Cannot use NAMESPACE with a Skaffold profile. Use one or the other."
     cmds:
-      - oc get pods -n {{.RESOLVED_NS | default .DEFAULT_NAMESPACE}}
+      - oc get pods -n {{.TARGET_NS}}
+      - |
+        source ./scripts/lib/health-check.sh
+        NAMESPACE="{{.TARGET_NS}}" check_namespace_health
 
   restart:
     desc: "Rolling restart of all deployments (usage: task sk:restart, task sk:restart -- stage, or task sk:restart NAMESPACE=foo)"
