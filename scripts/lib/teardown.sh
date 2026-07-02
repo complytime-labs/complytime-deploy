@@ -4,9 +4,9 @@
 # Sourceable library providing teardown_namespace().
 # Requires: oc, NAMESPACE (env var).
 #
-# Deletes all resources labelled app.kubernetes.io/managed-by=skaffold in the
-# target namespace, then deletes PVCs, and reports what was torn down vs. what
-# remains so operators can manually clean up the rest.
+# Scales deployments to zero, waits for pods to drain, deletes PVCs, then
+# deletes all resources labelled app.kubernetes.io/managed-by=skaffold.
+# Failures surface naturally — let the CI job handle retries.
 
 # shellcheck disable=SC2154  # NAMESPACE is provided by caller
 teardown_namespace() {
@@ -18,82 +18,33 @@ teardown_namespace() {
 	fi
 
 	local label="app.kubernetes.io/managed-by=skaffold"
+	local types="configmaps,deployments.apps,services,serviceaccounts"
+	types+=",networkpolicies.networking.k8s.io"
+	types+=",routes.route.openshift.io"
+	types+=",jobs.batch"
 
-	# Resource types to query. These cover everything Skaffold deploys via
-	# Kustomize in this project. We list them explicitly rather than using
-	# "all" because "oc get all" skips NetworkPolicies, ConfigMaps, etc.
-	local resource_types=(
-		configmaps
-		deployments.apps
-		services
-		serviceaccounts
-		networkpolicies.networking.k8s.io
-		routes.route.openshift.io
-		jobs.batch
-	)
-	local types_csv
-	types_csv=$(
-		IFS=,
-		echo "${resource_types[*]}"
-	)
+	# Scale deployments to zero so pods release PVC mounts.
+	echo "Scaling deployments to zero in $NAMESPACE"
+	oc scale deployments.apps -n "$NAMESPACE" -l "$label" --replicas=0 2>/dev/null || :
 
-	# --- Discover managed resources ---
-	local managed
-	managed=$(oc get "$types_csv" \
-		-n "$NAMESPACE" \
-		-l "$label" \
-		-o name 2>/dev/null) || :
+	# Pods inherit template labels (app: foo), not the skaffold managed-by
+	# label, so wait on all pods in the namespace.
+	echo "Waiting for pods to terminate"
+	oc wait pod -n "$NAMESPACE" --all --for=delete --timeout=120s 2>/dev/null || :
 
-	# --- Delete managed resources ---
-	if [[ -n "$managed" ]]; then
-		echo "=== Tearing down Skaffold-managed resources in $NAMESPACE ==="
-		echo "$managed" | while IFS= read -r resource; do
-			echo "  deleting $resource"
-		done
-		oc delete "$types_csv" \
-			-n "$NAMESPACE" \
-			-l "$label" \
-			--wait=false 2>/dev/null || :
-	else
-		echo "=== No Skaffold-managed resources found in $NAMESPACE ==="
-	fi
+	# Delete PVCs first — they may not carry the skaffold label.
+	echo "Deleting PVCs"
+	oc delete pvc --all -n "$NAMESPACE" --wait=true 2>/dev/null || :
 
-	# --- Delete PVCs (may not carry the skaffold label) ---
-	local pvcs
-	pvcs=$(oc get pvc -n "$NAMESPACE" -o name 2>/dev/null) || :
+	# Delete everything labelled as skaffold-managed.
+	echo "Deleting skaffold-managed resources"
+	oc delete "$types" -n "$NAMESPACE" -l "$label" 2>/dev/null || :
 
-	if [[ -n "$pvcs" ]]; then
-		echo ""
-		echo "=== Deleting PVCs ==="
-		echo "$pvcs" | while IFS= read -r pvc; do
-			echo "  deleting $pvc"
-		done
-		oc delete pvc --all -n "$NAMESPACE" --wait=false 2>/dev/null || :
-	fi
-
-	# --- Clean up overlay directory if provided ---
+	# Clean up generated overlay directory.
 	if [[ -n "$overlay_dir" ]] && [[ -d "$overlay_dir" ]]; then
 		rm -rf "$overlay_dir"
-		echo ""
-		echo "Removed generated overlay at $overlay_dir"
+		echo "Removed overlay $overlay_dir"
 	fi
 
-	# --- Report what remains ---
-	echo ""
-	local remaining
-	remaining=$(oc get configmaps,secrets,serviceaccounts,sealedsecrets.bitnami.com \
-		-n "$NAMESPACE" \
-		-o name 2>/dev/null) || :
-
-	if [[ -n "$remaining" ]]; then
-		echo "=== Preserved resources (not managed by Skaffold) ==="
-		echo "$remaining" | while IFS= read -r resource; do
-			echo "  $resource"
-		done
-		echo ""
-		echo "To remove these manually:"
-		echo "  oc delete configmaps,secrets --all -n $NAMESPACE"
-	else
-		echo "=== Namespace $NAMESPACE is clean — no resources remain ==="
-	fi
+	echo "Teardown of $NAMESPACE complete"
 }
