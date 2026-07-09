@@ -33,7 +33,7 @@ jobs:
 
       - name: Run MegaLinter
         id: megalinter
-        uses: trevor-vaughan/megalint-config@cc6d16f89d2408401b4a64647f95fd1323021573 # v0.1.3
+        uses: trevor-vaughan/megalint-config@2da93ca6173ca20edcde4be599de20f5a79197c6 # v0.4.0
         with:
           validate-all-codebase: ${{ github.event_name == 'push' && 'true' || 'false' }}
 
