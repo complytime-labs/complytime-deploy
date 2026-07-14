@@ -34,7 +34,7 @@ jobs:
 
   call_reusable_security:
     name: OpenSSF Scorecards
-    uses: complytime/org-infra/.github/workflows/reusable_security.yml@bbd7194995388f96dd28c0c0792d406c8a249140 # v0.4.0
+    uses: complytime/org-infra/.github/workflows/reusable_security.yml@aff4817ed6f0364e7f899bfb63ec6db42e69fde2 # v0.6.0
     permissions:
       contents: read
       id-token: write
